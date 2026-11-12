@@ -1,0 +1,224 @@
+.hospital-staff-page {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.hospital-staff-overview {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.hospital-staff-chart-title {
+  margin: 0 0 var(--space-4);
+  color: var(--brand-800);
+  font-size: var(--text-lg);
+}
+
+.hospital-staff-chart-empty,
+.hospital-staff-chart-note {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.hospital-staff-chart-empty {
+  margin: 0;
+  padding: var(--space-4) 0;
+}
+
+.hospital-staff-chart-note {
+  margin: var(--space-4) 0 0;
+}
+
+.hospital-staff-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.hospital-staff-filters button {
+  min-height: 38px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  background: #fff;
+  color: var(--gray-700);
+  cursor: pointer;
+}
+
+.hospital-staff-filters button.active {
+  border-color: var(--brand-700);
+  background: var(--brand-700);
+  color: #fff;
+}
+
+.hospital-staff-list {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.hospital-staff-card {
+  min-width: 0;
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--card-radius);
+  background: #fff;
+  box-shadow: var(--card-shadow);
+}
+
+.hospital-staff-video-card {
+  box-shadow: none;
+}
+
+.hospital-staff-video-alternatives {
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.hospital-staff-video-alternatives > p {
+  margin: 0 0 var(--space-3);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.hospital-staff-card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.hospital-staff-card-heading h2 {
+  color: var(--brand-900);
+  font-size: var(--text-lg);
+}
+
+.hospital-staff-card-heading p {
+  margin-top: 3px;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.hospital-staff-details {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.hospital-staff-details div {
+  min-width: 0;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--gray-50);
+}
+
+.hospital-staff-details dt {
+  color: var(--gray-600);
+  font-size: var(--text-xs);
+}
+
+.hospital-staff-details dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--gray-900);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.hospital-staff-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.hospital-staff-action-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--brand-100);
+  border-radius: var(--radius-lg);
+  background: var(--brand-50);
+}
+
+.hospital-staff-action-form label {
+  display: grid;
+  gap: var(--space-2);
+  color: var(--gray-800);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.hospital-staff-action-form input,
+.hospital-staff-action-form select,
+.hospital-staff-action-form textarea {
+  width: 100%;
+  min-height: 42px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: #fff;
+  color: var(--gray-900);
+  font: inherit;
+}
+
+.hospital-staff-action-form .hospital-staff-actions,
+.hospital-staff-action-form > small {
+  grid-column: 1 / -1;
+  margin-top: 0;
+}
+
+.hospital-staff-history {
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+.hospital-staff-history h3 {
+  margin-bottom: var(--space-3);
+  color: var(--brand-900);
+  font-size: var(--text-md);
+}
+
+.hospital-staff-history-row {
+  display: grid;
+  gap: 3px;
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--gray-100);
+  font-size: var(--text-sm);
+}
+
+.hospital-staff-history-row span,
+.hospital-staff-history-row small {
+  color: var(--color-text-muted);
+}
+
+@media (max-width: 760px) {
+  .hospital-staff-overview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .hospital-staff-details {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .hospital-staff-overview {
+    grid-template-columns: 1fr;
+  }
+
+  .hospital-staff-card {
+    padding: var(--space-4);
+  }
+
+  .hospital-staff-details,
+  .hospital-staff-action-form {
+    grid-template-columns: 1fr;
+  }
+}

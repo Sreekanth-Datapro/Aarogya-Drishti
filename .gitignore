@@ -1,0 +1,103 @@
+# Environment and local secrets (keep *.env.example)
+.env
+.env.*
+!.env.example
+!**/.env.example
+!.env.*.example
+!**/.env.*.example
+
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Frontend / build artifacts
+frontend/build/
+**/build/
+dist/
+**/dist/
+coverage/
+**/coverage/
+*.tsbuildinfo
+
+# Logs and temporary files
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.tmp
+*.temp
+tmp/
+temp/
+.cache/
+**/.cache/
+
+# Python
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.venv/
+venv/
+ENV/
+env/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Uploads, local storage, backups, DB dumps
+uploads/
+storage/
+**/storage/
+backups/
+*.bak
+*.backup
+*.sql.gz
+*.dump
+*.pgdump
+
+# IDE and OS
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Docker / Netlify local
+.netlify/
+.docker/
+
+# Local test env (example templates remain tracked via !.env.*.example)
+.env.test
+**/.env.test
+
+# Local test output files
+/aipipe_test_out.txt
+/backend_docker_unit_out.txt
+/backend_patient_test_out.txt
+/frontend_build_phase2.txt
+
+# Local test output files
+**/*_test_out.txt
+# Local database schema and seed artifact
+/backend/ALL_IN_ONE (1).sql
+
+# Local translation review extracts
+/backend/i18n-review/
+
+# Superseded or experimental migration proposals
+/backend/migrations-proposed/
+# Frontend local build and test artifacts
+/frontend/_build_out.txt
+/frontend/_check_lock.js
+/frontend/lighthouse-pwa-report.json
+/frontend/win_build.txt
+/frontend/win_ci.txt
+/frontend/_offline_test_out.txt
+/frontend/_sw_test_out.txt

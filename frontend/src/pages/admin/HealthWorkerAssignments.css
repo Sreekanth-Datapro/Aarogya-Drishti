@@ -1,0 +1,131 @@
+.health-worker-assignments-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.health-worker-assignments-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid var(--gray-200, #e5e7eb);
+  border-radius: var(--radius-lg, 12px);
+  background: linear-gradient(135deg, #eff6ff 0%, #ffffff 68%);
+}
+
+.health-worker-assignments-hero .page-title {
+  margin: 0;
+}
+
+.health-worker-assignments-hero .page-subtitle {
+  margin: 5px 0 0;
+}
+
+.health-worker-assignments-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  color: #1d4ed8;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.health-worker-assignments-table-wrap {
+  overflow-x: auto;
+}
+
+.health-worker-assignments-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.health-worker-assignments-table th,
+.health-worker-assignments-table td {
+  padding: 12px 10px;
+  border-bottom: 1px solid var(--gray-100, #f3f4f6);
+  text-align: left;
+}
+
+.health-worker-assignments-table th {
+  background: var(--gray-50, #f9fafb);
+  color: var(--gray-600, #4b5563);
+  font-size: 12px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.health-worker-assignments-secondary {
+  display: block;
+  margin-top: 3px;
+  color: var(--gray-500, #6b7280);
+  font-size: 12px;
+}
+
+.health-worker-assignments-empty {
+  padding: 24px !important;
+  color: var(--gray-500, #6b7280);
+  text-align: center !important;
+}
+
+.health-worker-assignments-worker {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding: 12px;
+  border-radius: 9px;
+  background: var(--gray-50, #f9fafb);
+}
+
+.health-worker-assignments-worker span {
+  color: var(--gray-600, #4b5563);
+}
+
+.health-worker-assignment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.health-worker-assignment-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  align-items: end;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--gray-200, #e5e7eb);
+  border-radius: 10px;
+}
+
+@media (max-width: 760px) {
+  .health-worker-assignments-hero {
+    flex-direction: column;
+  }
+
+  .health-worker-assignment-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---- Phone: table scrolls horizontally (5-col table is wide) ---- */
+@media (max-width: 600px) {
+  .health-worker-assignments-table {
+    min-width: 480px;
+  }
+}
+
+/* ---- Very small phones: hero padding and font ---- */
+@media (max-width: 375px) {
+  .health-worker-assignments-hero {
+    padding: 14px;
+  }
+
+  .health-worker-assignments-hero .page-title {
+    font-size: 18px;
+  }
+}

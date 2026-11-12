@@ -1,0 +1,105 @@
+# Local Docker stack for Aarogya Drishti
+# Does NOT apply production migrations automatically.
+# Does NOT deploy to Render.
+#
+# Prerequisites:
+#   - backend/.env and aipipe/aipipe/.env with matching AI_PIPELINE_AUTH_TOKEN (≥32 chars)
+#   - For optional local Postgres: set COMPOSE_POSTGRES_PASSWORD, then:
+#       docker compose --profile local-db up --build
+#     and set DB_HOST=db DB_NAME=aarogya_docker DB_USER=aarogya DB_PASSWORD=<same>
+#     in the shell or backend/.env for the web container.
+#
+# AI service stays on the internal network only (no host port publish).
+
+name: aarogya-drishti
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: aarogya-web
+    ports:
+      - "${WEB_PORT:-5001}:5000"
+    env_file:
+      - ./backend/.env
+    environment:
+      NODE_ENV: production
+      PORT: "5000"
+      TRUST_PROXY: ${TRUST_PROXY:-1}
+      # Override loopback URLs from local .env so Express reaches the aipipe service
+      AI_PIPELINE_URL: http://aipipe:8010
+    depends_on:
+      aipipe:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+        required: false
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:5000/api/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    networks:
+      - aarogya-internal
+    restart: unless-stopped
+
+  aipipe:
+    build:
+      context: ./aipipe/aipipe
+      dockerfile: Dockerfile
+    container_name: aarogya-aipipe
+    # Not published to the host — keep FastAPI private.
+    # Check health: docker compose exec aipipe curl -fsS http://127.0.0.1:8010/health
+    expose:
+      - "8010"
+    env_file:
+      - ./aipipe/aipipe/.env
+    environment:
+      PORT: "8010"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8010/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+    networks:
+      - aarogya-internal
+    restart: unless-stopped
+
+  # Optional local PostgreSQL (NOT production). Profile: local-db
+  db:
+    profiles: ["local-db"]
+    image: postgres:16-alpine
+    container_name: aarogya-db-local
+    environment:
+      POSTGRES_DB: ${COMPOSE_DB_NAME:-aarogya_docker}
+      POSTGRES_USER: ${COMPOSE_DB_USER:-aarogya}
+      # Local profile only — override via COMPOSE_POSTGRES_PASSWORD; never use in production
+      POSTGRES_PASSWORD: ${COMPOSE_POSTGRES_PASSWORD:-aarogya_local_dev_only}
+    ports:
+      - "${COMPOSE_DB_PUBLISH_PORT:-5433}:5432"
+    volumes:
+      - aarogya_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - aarogya-internal
+    restart: unless-stopped
+
+networks:
+  aarogya-internal:
+    driver: bridge
+
+volumes:
+  aarogya_pg_data:

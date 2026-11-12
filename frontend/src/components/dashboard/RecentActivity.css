@@ -1,0 +1,475 @@
+/* Shared Styles for the 4 Bottom Row Cards */
+.bottom-cards-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-top: var(--space-4, 16px);
+}
+
+.bottom-card {
+  background: var(--surface-white);
+  border: 1px solid var(--border-color);
+  border-radius: var(--card-radius);
+  padding: 16px 18px;
+  box-shadow: var(--card-shadow);
+  display: flex;
+  flex-direction: column;
+}
+
+.bottom-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.bottom-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bottom-card-title .title-icon.green {
+  color: var(--primary-green);
+}
+
+.bottom-card-title h4 {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.card-header-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--primary-green);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: none;
+}
+
+.card-header-link:hover {
+  text-decoration: underline;
+}
+
+/* 1. Recent Activities */
+.activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.activity-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.activity-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-top: 5px;
+  flex-shrink: 0;
+}
+
+.activity-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.activity-desc {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--gray-800);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.activity-time {
+  font-size: 10px;
+  color: var(--gray-400);
+}
+
+/* 2. Registration Requests */
+.reg-status-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.reg-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--content-background);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.reg-status-row:hover {
+  background: var(--brand-50);
+}
+
+.reg-status-label-col {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--gray-700);
+}
+
+.status-icon.amber { color: var(--accent-orange); }
+.status-icon.green { color: var(--primary-green); }
+.status-icon.red   { color: var(--danger-color); }
+
+.reg-status-val-col {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.status-count {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.chevron {
+  color: var(--gray-400);
+}
+
+/* 3. District Overview */
+.district-content-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 1;
+}
+
+.district-map-wrap {
+  width: 68px;
+  height: 60px;
+  flex-shrink: 0;
+}
+
+.district-map-svg {
+  width: 100%;
+  height: 100%;
+}
+
+.district-details-col {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.district-name-wrap {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.district-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.district-sub {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.district-meta-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.district-meta-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--gray-600);
+  font-weight: 500;
+}
+
+.meta-icon {
+  color: var(--primary-green);
+}
+
+/* 4. System Status */
+.online-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--success-soft);
+  color: var(--success-color);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
+.online-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--success-color);
+}
+
+.system-metrics-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-bottom: 12px;
+}
+
+.system-metric-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+}
+
+.metric-label-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--gray-600);
+}
+
+.metric-icon {
+  color: var(--text-secondary);
+}
+
+.metric-value.green {
+  font-weight: 600;
+  color: var(--primary-green);
+}
+
+.metric-value.dark {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.operational-banner {
+  background: var(--success-soft);
+  border: 1px solid var(--brand-100);
+  border-radius: 8px;
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--success-color);
+  margin-top: auto;
+}
+
+.op-icon {
+  color: var(--primary-green);
+}
+
+/* Review Requests Modal */
+.review-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(4px);
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.review-modal-card {
+  background: var(--surface-white);
+  border-radius: 16px;
+  box-shadow: var(--shadow-lg);
+  width: 100%;
+  max-width: 720px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.review-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.modal-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.modal-title-wrap h3 {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.modal-close-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  padding: 4px;
+  border-radius: 6px;
+}
+
+.modal-close-btn:hover {
+  background: var(--brand-50);
+  color: var(--text-primary);
+}
+
+.modal-action-banner {
+  background: var(--brand-50);
+  color: var(--primary-green-dark);
+  padding: 10px 20px;
+  font-size: 13px;
+  font-weight: 500;
+  border-bottom: 1px solid var(--brand-100);
+}
+
+.review-modal-body {
+  padding: 16px 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.modal-empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-secondary);
+}
+
+.empty-icon.green {
+  color: var(--primary-green);
+  margin-bottom: 12px;
+}
+
+.review-table-wrapper {
+  overflow-x: auto;
+}
+
+.review-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.review-table th {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 2px solid var(--border-color);
+  color: var(--gray-600);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.review-table td {
+  padding: 10px;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: top;
+}
+
+.applicant-sub {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.designation-badge {
+  background: var(--info-soft);
+  color: var(--accent-blue);
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 11px;
+}
+
+.location-sub {
+  display: block;
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.table-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.action-btn {
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
+}
+
+.approve-btn {
+  background: var(--primary-green);
+  color: var(--surface-white);
+}
+
+.approve-btn:hover {
+  background: var(--primary-green-dark);
+}
+
+.reject-btn {
+  background: var(--surface-white);
+  border-color: var(--danger-color);
+  color: var(--danger-color);
+}
+
+.reject-btn:hover {
+  background: var(--danger-soft);
+}
+
+.review-modal-footer {
+  padding: 12px 20px;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Responsive Breakpoints */
+@media (max-width: 1100px) {
+  .bottom-cards-row {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .bottom-cards-row {
+    grid-template-columns: 1fr;
+  }
+}

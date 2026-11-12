@@ -1,0 +1,326 @@
+.patient-workflow-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.patient-workflow-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid var(--gray-200, #e5e7eb);
+  border-radius: var(--radius-lg, 12px);
+  background: linear-gradient(135deg, #ecfdf5 0%, #ffffff 68%);
+}
+
+.patient-workflow-hero .page-title {
+  margin: 0;
+}
+
+.patient-workflow-hero .page-subtitle {
+  margin: 5px 0 0;
+}
+
+.patient-registration-header-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.patient-duplicate-panel {
+  grid-column: 1 / -1;
+  padding: 14px;
+  border: 1px solid #fcd34d;
+  border-radius: 12px;
+  background: #fffbeb;
+}
+
+.patient-duplicate-panel h3 {
+  margin: 12px 0 8px;
+  font-size: 15px;
+}
+
+.patient-duplicate-panel ul {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.patient-duplicate-panel li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.patient-duplicate-panel li small {
+  display: block;
+  margin-top: 4px;
+  color: var(--gray-600, #4b5563);
+}
+
+.patient-workflow-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  color: #047857;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.patient-workflow-section-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.patient-workflow-section-heading h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.patient-workflow-section-heading p {
+  margin: 4px 0 0;
+  color: var(--gray-500, #6b7280);
+  font-size: 14px;
+}
+
+.patient-workflow-icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 12px;
+  background: #d1fae5;
+  color: #047857;
+}
+
+.patient-registration-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.patient-registration-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.patient-form-full {
+  grid-column: 1 / -1;
+}
+
+/* numbered parts of the form: patient, location, consent */
+.patient-form-section {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--gray-200, #e5e7eb);
+  color: #065f46;
+  font-size: 15px;
+}
+
+.patient-form-section:first-child {
+  margin-top: 0;
+}
+
+.patient-consent-intro {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--gray-600, #4b5563);
+  font-size: 14px;
+}
+
+.patient-consent-list {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.patient-consent-item {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--gray-200, #e5e7eb);
+  border-radius: 12px;
+  background: #f9fafb;
+}
+
+.patient-consent-item legend {
+  padding: 0 4px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.patient-consent-item p {
+  flex: 1;
+  margin: 0;
+  color: var(--gray-700, #374151);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.patient-consent-check {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.patient-consent-check input {
+  width: 18px;
+  height: 18px;
+  accent-color: #047857;
+}
+
+.patient-consent-choice {
+  display: flex;
+  gap: 8px;
+}
+
+.patient-consent-choice label {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--gray-300, #d1d5db);
+  border-radius: 8px;
+  background: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.patient-consent-choice label.selected {
+  border-color: #047857;
+  background: #ecfdf5;
+  color: #065f46;
+}
+
+.patient-consent-choice input {
+  accent-color: #047857;
+}
+
+.patient-workflow-table-wrap {
+  overflow-x: auto;
+}
+
+.patient-workflow-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.patient-workflow-table th,
+.patient-workflow-table td {
+  padding: 12px 10px;
+  border-bottom: 1px solid var(--gray-100, #f3f4f6);
+  text-align: left;
+}
+
+.patient-workflow-table th {
+  background: var(--gray-50, #f9fafb);
+  color: var(--gray-600, #4b5563);
+  font-size: 12px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.patient-workflow-code {
+  color: #065f46;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-weight: 700;
+}
+
+.patient-workflow-empty {
+  padding: 24px !important;
+  color: var(--gray-500, #6b7280);
+  text-align: center !important;
+}
+
+@media (max-width: 700px) {
+  .patient-workflow-hero {
+    flex-direction: column;
+  }
+
+  .patient-registration-header-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .patient-duplicate-panel li {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .patient-registration-form {
+    grid-template-columns: 1fr;
+  }
+
+  .patient-registration-form > div[aria-hidden="true"] {
+    display: none;
+  }
+
+  .patient-registration-actions .btn {
+    flex: 1;
+  }
+
+  /* recent patients: each row becomes a small card */
+  .patient-workflow-table thead {
+    display: none;
+  }
+
+  .patient-workflow-table tr {
+    display: block;
+    margin-bottom: 10px;
+    border: 1px solid var(--gray-200, #e5e7eb);
+    border-radius: 10px;
+  }
+
+  .patient-workflow-table td {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 12px;
+    border-bottom: none;
+  }
+
+  .patient-workflow-table td::before {
+    content: attr(data-label);
+    color: var(--gray-500, #6b7280);
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .patient-workflow-table td.patient-workflow-empty::before {
+    content: none;
+  }
+}

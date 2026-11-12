@@ -1,0 +1,278 @@
+/*
+  Responsive hardening for Aarogya Drishti.
+  Builds on existing layout/Sidebar/Topbar rules without replacing them.
+*/
+
+:root {
+  --touch-min: 44px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+}
+
+html,
+body,
+#root {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+body {
+  padding-top: var(--safe-top);
+  padding-right: var(--safe-right);
+  padding-bottom: var(--safe-bottom);
+  padding-left: var(--safe-left);
+}
+
+/* Keep wide tables inside the page instead of growing the document */
+.table-scroll,
+.role-table-scroll,
+.role-matrix-scroll,
+.role-registry-scroll,
+.role-users-table-scroll,
+.admin-table-wrap,
+.data-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.data-table,
+.admin-table,
+.role-permission-matrix {
+  min-width: 0;
+}
+
+/* Touch-friendly controls */
+.btn,
+.topbar-menu,
+.topbar-menu-toggle,
+.sidebar-mobile-close,
+.sidebar-collapse-toggle {
+  min-height: var(--touch-min);
+  min-width: var(--touch-min);
+}
+
+.topbar-menu-toggle {
+  align-items: center;
+  justify-content: center;
+}
+
+/* Charts and cards should shrink with the viewport */
+.card,
+.stat-card,
+.role-stat-card,
+.dashboard-skeleton-card,
+svg {
+  max-width: 100%;
+}
+
+img,
+video,
+canvas {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Tablet */
+@media (max-width: 1024px) {
+  .grid.grid-2,
+  .grid.grid-3,
+  .grid.grid-4,
+  .district-admin-overview-grid,
+  .role-stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .page {
+    max-width: 100%;
+  }
+}
+
+/* Drawer breakpoint: match existing Sidebar.css (900px) */
+@media (max-width: 900px) {
+  .topbar-menu-toggle {
+    display: inline-flex;
+  }
+
+  .app-main {
+    margin-left: 0 !important;
+  }
+
+  .admin-sidebar,
+  .sidebar {
+    width: min(86vw, 280px);
+    padding-top: var(--safe-top);
+    padding-bottom: var(--safe-bottom);
+  }
+
+  .sidebar-overlay {
+    display: block;
+  }
+
+  .grid.grid-2,
+  .grid.grid-3,
+  .grid.grid-4,
+  .district-admin-overview-grid,
+  .role-stats-grid,
+  .stats-grid,
+  .summary-tiles {
+    grid-template-columns: 1fr;
+  }
+
+  .page-header,
+  .role-management-header,
+  .district-admin-overview-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-3);
+  }
+
+  .modal {
+    width: calc(100vw - 24px);
+    max-width: calc(100vw - 24px);
+    max-height: calc(100dvh - 24px - var(--safe-top) - var(--safe-bottom));
+    margin: calc(12px + var(--safe-top)) auto;
+  }
+
+  .modal-header,
+  .modal-body,
+  .modal-footer {
+    padding-left: var(--space-4);
+    padding-right: var(--space-4);
+  }
+}
+
+/* Phones */
+@media (max-width: 560px) {
+  .page {
+    padding: var(--space-4) var(--space-3);
+  }
+
+  .page-title {
+    font-size: var(--text-xl);
+    line-height: 1.25;
+  }
+
+  .page-subtitle {
+    font-size: var(--text-sm);
+  }
+
+  .btn,
+  .btn-primary,
+  .btn-secondary,
+  .btn-danger {
+    width: auto;
+    min-height: var(--touch-min);
+  }
+
+  .btn-block,
+  .auth-card .btn,
+  .table-actions .btn {
+    min-height: var(--touch-min);
+  }
+
+  .input,
+  .select,
+  input[type="text"],
+  input[type="password"],
+  input[type="email"],
+  input[type="number"],
+  input[type="date"],
+  input[type="search"],
+  select,
+  textarea {
+    font-size: 16px; /* prevents iOS zoom */
+    min-height: 48px;
+  }
+
+  .card-header,
+  .card-body,
+  .admin-panel-header {
+    padding-left: var(--space-4);
+    padding-right: var(--space-4);
+  }
+
+  /* Prefer stacked form rows on very small screens */
+  .form-row,
+  .form-grid,
+  .filters-row,
+  .grid.grid-2 {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--space-3);
+  }
+
+  .topbar {
+    min-height: calc(var(--topbar-height) - 8px);
+    padding-left: var(--space-3);
+    padding-right: var(--space-3);
+  }
+}
+
+/* Very small phones */
+@media (max-width: 360px) {
+  .page {
+    padding: var(--space-3) var(--space-2);
+  }
+
+  .topbar-title {
+    max-width: 42vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+/* Offline / PWA banners */
+.offline-banner,
+.pwa-update-banner {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 10px var(--space-4);
+  padding-left: calc(var(--space-4) + var(--safe-left));
+  padding-right: calc(var(--space-4) + var(--safe-right));
+  font-size: var(--text-sm);
+}
+
+.offline-banner {
+  background: #fff6e5;
+  color: #92400e;
+  border-bottom: 1px solid #f3d19c;
+}
+
+.pwa-update-banner {
+  background: #e8f1fd;
+  color: #1d5fbf;
+  border-bottom: 1px solid #bfdbfe;
+}
+
+.offline-banner button,
+.pwa-update-banner button {
+  min-height: var(--touch-min);
+  min-width: auto;
+  padding: 0 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid currentColor;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.pwa-install-card ol {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: grid;
+  gap: 6px;
+}
+
+.pwa-install-card .text-muted {
+  margin-bottom: var(--space-3);
+}

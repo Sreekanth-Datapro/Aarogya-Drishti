@@ -1,0 +1,761 @@
+.specialist-page {
+  min-width: 0;
+}
+
+.specialist-hero {
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.specialist-hero .care-eyebrow,
+.specialist-hero .care-hero-title,
+.specialist-hero .care-hero-text {
+  color: #ffffff;
+}
+
+.specialist-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.specialist-stats .stat-card {
+  min-width: 0;
+}
+
+.specialist-queue,
+.specialist-detail,
+.specialist-availability,
+.specialist-availability-requests {
+  min-width: 0;
+}
+
+.specialist-availability-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: end;
+  gap: 12px;
+  margin: 18px 0 24px;
+}
+
+.specialist-availability-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--gray-700, #374151);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.specialist-availability-form input,
+.specialist-availability-form select {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--gray-300, #d1d5db);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--gray-900, #111827);
+  font: inherit;
+}
+
+.specialist-availability-mode {
+  display: grid;
+  gap: 6px;
+  color: var(--gray-700, #374151);
+  font-size: 13px;
+}
+
+.specialist-availability-mode strong {
+  color: #134e4a;
+}
+
+.specialist-availability-list-title {
+  margin: 0 0 10px;
+  color: #134e4a;
+  font-size: 15px;
+}
+
+.specialist-section-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.specialist-section-heading .care-muted {
+  margin: 4px 0 0;
+}
+
+.specialist-availability-request-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.specialist-availability-request {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--gray-200, #e5e7eb);
+  border-radius: 10px;
+  background: var(--gray-50, #f9fafb);
+}
+
+.specialist-availability-request h3 {
+  margin: 0 0 6px;
+  color: #134e4a;
+  font-size: 15px;
+}
+
+.specialist-availability-request p {
+  margin: 5px 0;
+  font-size: 13px;
+}
+
+.specialist-availability-request-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+  gap: 10px;
+}
+
+.specialist-availability-request-actions form {
+  display: grid;
+  gap: 8px;
+}
+
+.specialist-availability-request-actions label {
+  display: grid;
+  gap: 5px;
+  color: var(--gray-700, #374151);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.specialist-availability-request-actions input,
+.specialist-availability-request-actions textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--gray-300, #d1d5db);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--gray-900, #111827);
+  font: inherit;
+}
+
+.specialist-count {
+  color: var(--gray-600, #4b5563);
+  font-size: 13px;
+}
+
+.specialist-search {
+  display: flex;
+  gap: 8px;
+  margin: 16px 0 4px;
+}
+
+.specialist-search input,
+.specialist-assessment-form textarea,
+.specialist-assessment-form select,
+.specialist-decision-form textarea,
+.specialist-decision-form select,
+.specialist-decision-form input {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--gray-300, #d1d5db);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--gray-900, #111827);
+  font: inherit;
+}
+
+.specialist-consultation-create {
+  display: grid;
+  gap: 12px;
+}
+
+.specialist-consultation-create-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+  max-width: 640px;
+}
+
+.specialist-consultation-create-form label {
+  grid-column: 1 / -1;
+  color: var(--gray-700, #374151);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.specialist-consultation-create-form select {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--gray-300, #d1d5db);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--gray-900, #111827);
+  font: inherit;
+}
+
+.specialist-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.specialist-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.specialist-table th,
+.specialist-table td {
+  padding: 12px 10px;
+  border-bottom: 1px solid var(--gray-200, #e5e7eb);
+  vertical-align: middle;
+}
+
+.specialist-table th {
+  color: var(--gray-600, #4b5563);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.specialist-table td strong,
+.specialist-table td small {
+  display: block;
+}
+
+.specialist-table td small {
+  margin-top: 3px;
+  color: var(--gray-600, #4b5563);
+}
+
+.specialist-appointments-page {
+  display: grid;
+  gap: 16px;
+}
+
+.specialist-appointments-page .page-header {
+  margin-bottom: 0;
+}
+
+.specialist-appointments-page .page-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #134e4a;
+}
+
+.specialist-appointments-controls {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.specialist-appointments-search {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: 1 1 320px;
+  max-width: 520px;
+  padding: 0 12px;
+  border: 1px solid var(--gray-300, #d1d5db);
+  border-radius: 9px;
+  background: #fff;
+  color: #134e4a;
+}
+
+.specialist-appointments-search input {
+  width: 100%;
+  min-width: 0;
+  padding: 11px 0;
+  border: 0;
+  outline: 0;
+  color: var(--gray-900, #111827);
+  font: inherit;
+}
+
+.specialist-appointments-filter {
+  display: grid;
+  gap: 5px;
+  color: var(--gray-700, #374151);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.specialist-appointments-filter select {
+  min-width: 190px;
+  padding: 10px 12px;
+  border: 1px solid var(--gray-300, #d1d5db);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--gray-900, #111827);
+  font: inherit;
+}
+
+.specialist-appointments-sections {
+  display: grid;
+  gap: 16px;
+}
+
+.specialist-appointments-section {
+  min-width: 0;
+  border-top: 3px solid #16805d;
+}
+
+.specialist-appointments-section .specialist-section-heading {
+  align-items: center;
+}
+
+.specialist-appointment-person {
+  display: grid;
+  gap: 3px;
+  margin-bottom: 8px;
+  color: #134e4a;
+}
+
+.specialist-appointment-person small {
+  color: var(--gray-600, #4b5563);
+}
+
+.specialist-appointment-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+@media (max-width: 640px) {
+  .specialist-appointments-page .page-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .specialist-appointments-page .page-header > button {
+    width: 100%;
+  }
+
+  .specialist-availability-request-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.specialist-detail {
+  display: grid;
+  gap: 20px;
+}
+
+.specialist-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.specialist-detail h3,
+.specialist-images h3,
+.specialist-assessment h3 {
+  margin: 0 0 12px;
+  color: #134e4a;
+  font-size: 16px;
+}
+
+.specialist-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.specialist-facts div {
+  min-width: 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--gray-50, #f9fafb);
+}
+
+.specialist-facts dt {
+  color: var(--gray-600, #4b5563);
+  font-size: 12px;
+}
+
+.specialist-facts dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--gray-800, #1f2937);
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+
+.specialist-text-row {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 10px;
+  padding: 10px;
+  border: 1px solid var(--gray-200, #e5e7eb);
+  border-radius: 8px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.specialist-text-row span {
+  color: var(--gray-600, #4b5563);
+}
+
+.specialist-images,
+.specialist-assessment,
+.specialist-clinical-section {
+  padding-top: 16px;
+  border-top: 1px solid var(--gray-200, #e5e7eb);
+}
+
+.specialist-decision-summary,
+.specialist-decision-signed {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.specialist-decision-summary h4,
+.specialist-decision-form h4 {
+  margin: 0;
+  color: #134e4a;
+  font-size: 15px;
+}
+
+.specialist-decision-form {
+  display: grid;
+  gap: 10px;
+}
+
+.specialist-decision-form > label,
+.specialist-decision-dependent > label {
+  color: var(--gray-700, #374151);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.specialist-decision-cards {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin: 2px 0 8px;
+}
+
+.specialist-decision-card {
+  display: flex;
+  min-height: 92px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--gray-200, #e5e7eb);
+  border-radius: 12px;
+  background: #fff;
+  color: #334155;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  text-align: left;
+  transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
+}
+
+.specialist-decision-card svg {
+  color: #0f766e;
+}
+
+.specialist-decision-card:hover,
+.specialist-decision-card.active {
+  border-color: #0f766e;
+  background: #f0fdfa;
+  box-shadow: 0 0 0 2px rgb(15 118 110 / 10%);
+}
+
+.specialist-decision-dependent {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--gray-200, #e5e7eb);
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.specialist-decision-dependent .care-muted,
+.specialist-decision-form .care-muted {
+  margin: 0;
+}
+
+.specialist-field-error {
+  margin: 0;
+  color: #b91c1c;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+@media (max-width: 900px) {
+  .specialist-decision-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .specialist-decision-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .specialist-decision-card {
+    min-height: 64px;
+    flex-direction: row;
+    align-items: center;
+  }
+}
+
+.specialist-clinical-section h4 {
+  margin: 12px 0 8px;
+  color: #134e4a;
+  font-size: 14px;
+}
+
+.specialist-clinical-card {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+  padding: 14px;
+  border: 1px solid var(--gray-200, #e5e7eb);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.specialist-clinical-card > h4,
+.specialist-clinical-card > p {
+  margin: 0;
+}
+
+.specialist-clinical-card > p {
+  color: var(--gray-700, #374151);
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+
+.specialist-report-link {
+  width: fit-content;
+  color: #0f766e;
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+.specialist-report-state {
+  color: var(--gray-600, #4b5563);
+  font-size: 13px;
+}
+
+.specialist-photo-card {
+  margin-bottom: 14px;
+  padding: 14px;
+  border: 1px solid var(--gray-200, #e5e7eb);
+  border-radius: 10px;
+}
+
+.specialist-photo-card h4 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 10px;
+  color: #134e4a;
+}
+
+.specialist-photo-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.specialist-photo-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--gray-200, #e5e7eb);
+  border-radius: 8px;
+  background: #f9fafb;
+}
+
+.specialist-photo-panel strong {
+  color: #134e4a;
+  font-size: 13px;
+}
+
+.specialist-photo-panel a {
+  display: grid;
+  place-items: center;
+  min-height: 160px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: #e5e7eb;
+}
+
+.specialist-photo-panel img {
+  display: block;
+  width: 100%;
+  max-height: 360px;
+  object-fit: contain;
+}
+
+.specialist-photo-panel small {
+  color: var(--gray-600, #4b5563);
+  font-size: 12px;
+}
+
+.specialist-photo-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 160px;
+  padding: 12px;
+  color: var(--gray-600, #4b5563);
+  text-align: center;
+}
+
+.specialist-photo-error {
+  color: #991b1b;
+}
+
+.specialist-image-safety {
+  margin: 10px 0 0;
+  padding: 10px;
+  border-left: 3px solid #0f766e;
+  background: #f0fdfa;
+  color: #134e4a;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.specialist-link-button {
+  padding: 2px 4px;
+  border: 0;
+  background: transparent;
+  color: #0f766e;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.specialist-assessment-form {
+  display: grid;
+  gap: 9px;
+}
+
+.specialist-assessment-form textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+
+.specialist-assessment-form label {
+  color: #134e4a;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.specialist-assessment-form .care-muted {
+  margin: 0;
+}
+
+.specialist-assessment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@media (max-width: 900px) {
+  .specialist-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .specialist-availability-request-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .specialist-hero,
+  .specialist-section-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .specialist-consultation-create-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .specialist-availability-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .specialist-consultation-create-form label {
+    grid-column: auto;
+  }
+
+  .specialist-search,
+  .specialist-assessment-actions {
+    flex-direction: column;
+  }
+
+  .specialist-detail-grid,
+  .specialist-photo-pair,
+  .specialist-facts {
+    grid-template-columns: 1fr;
+  }
+
+  .specialist-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+
+  .specialist-table,
+  .specialist-table tbody,
+  .specialist-table tr,
+  .specialist-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .specialist-table tr {
+    margin-bottom: 10px;
+    padding: 8px;
+    border: 1px solid var(--gray-200, #e5e7eb);
+    border-radius: 9px;
+  }
+
+  .specialist-table td {
+    display: grid;
+    grid-template-columns: minmax(90px, 36%) 1fr;
+    gap: 8px;
+    padding: 8px 4px;
+    border: 0;
+  }
+
+  .specialist-table td::before {
+    content: attr(data-label);
+    color: var(--gray-600, #4b5563);
+    font-size: 12px;
+    font-weight: 700;
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "Real-ESRGAN General x4v3",
+  "checkpoint": "realesr-general-x4v3 (Real-ESRGAN v0.2.5.0, Xintao Wang et al.)",
+  "publisher": "Qualcomm AI Hub Models v0.66.0 (ONNX, float precision)",
+  "model_card": "https://huggingface.co/qualcomm/Real-ESRGAN-General-x4v3",
+  "download_url": "https://qaihub-public-assets.s3.us-west-2.amazonaws.com/qai-hub-models/models/real_esrgan_general_x4v3/releases/v0.66.0/real_esrgan_general_x4v3-onnx-float.zip",
+  "download_sha256": "fc094329b24a00c936ebc1cc4c51bc59633e7dc36f4a553344342171cbd3c7cf",
+  "downloaded_on": "2026-11-07",
+  "license": "BSD-3-Clause (see LICENSE-Real-ESRGAN.txt)",
+  "paper": "Real-ESRGAN: Training Real-World Blind Super-Resolution with Pure Synthetic Data (arXiv 2107.10833)",
+  "files": {
+    "real_esrgan_general_x4v3.onnx": "09e6b675a0a18a97e1057c8dd7e984ef878a0a02ce104430da525b6241c858e7",
+    "real_esrgan_general_x4v3.data": "512d0ec9940c2e9d85d27f2952f12a0b77b7841dc22df4ce9f3ea458bc98f37f"
+  },
+  "model_file": "real_esrgan_general_x4v3.onnx",
+  "input": { "name": "image", "shape": [1, 3, 128, 128], "layout": "NCHW RGB", "range": [0, 1] },
+  "output": { "name": "upscaled_image", "shape": [1, 3, 512, 512], "layout": "NCHW RGB", "range": [0, 1] },
+  "scale": 4
+}

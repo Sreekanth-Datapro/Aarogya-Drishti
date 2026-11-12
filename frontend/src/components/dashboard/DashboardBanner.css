@@ -1,0 +1,230 @@
+/* Panoramic Healthcare Banner */
+.dashboard-hero-banner {
+  position: relative;
+  width: 100%;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: var(--card-shadow, 0 10px 28px rgba(15, 23, 42, 0.12));
+  margin-bottom: var(--space-4, 16px);
+  background-color: #0b3d2e;
+  animation: dashboard-banner-enter 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.banner-image-wrapper {
+  position: relative;
+  width: 100%;
+  height: clamp(110px, 14vw, 168px);
+  overflow: hidden;
+}
+
+.banner-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center right;
+  display: block;
+  transform: scale(1.04);
+  animation: dashboard-banner-kenburns 18s ease-in-out infinite alternate;
+}
+
+.banner-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(13, 59, 43, 0.04) 0%,
+    rgba(10, 36, 25, 0.18) 100%
+  );
+  pointer-events: none;
+}
+
+.banner-shimmer {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    110deg,
+    transparent 20%,
+    rgba(255, 255, 255, 0.14) 42%,
+    transparent 64%
+  );
+  transform: translateX(-120%);
+  animation: dashboard-banner-shimmer 4.8s ease-in-out 0.6s infinite;
+  pointer-events: none;
+}
+
+.dashboard-hero-banner.dashboard-role-banner {
+  display: flex;
+  align-items: center;
+  min-height: clamp(168px, 22vw, 220px);
+  padding: 22px 26px;
+  background: transparent;
+  color: #ffffff;
+}
+
+.dashboard-hero-banner.dashboard-role-banner .banner-image-wrapper {
+  position: absolute;
+  inset: 0;
+  height: auto;
+}
+
+.dashboard-hero-banner.dashboard-role-banner .banner-overlay {
+  background: linear-gradient(
+    105deg,
+    rgba(6, 78, 59, 0.94) 0%,
+    rgba(4, 120, 87, 0.78) 52%,
+    rgba(16, 185, 129, 0.28) 100%
+  );
+}
+
+.dashboard-banner-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4, 16px);
+  width: 100%;
+  min-width: 0;
+  animation: dashboard-banner-content-enter 620ms cubic-bezier(0.22, 1, 0.36, 1) 80ms both;
+}
+
+.dashboard-banner-content .page-header {
+  align-items: center;
+  margin-bottom: 0;
+}
+
+.dashboard-banner-content h1,
+.dashboard-banner-content h2,
+.dashboard-banner-content .page-title {
+  color: #ffffff;
+}
+
+.dashboard-banner-content p,
+.dashboard-banner-content .page-subtitle {
+  color: rgba(255, 255, 255, 0.88);
+}
+
+/* Health Worker — forest / field outreach */
+.dashboard-banner-healthWorker.dashboard-role-banner .banner-overlay {
+  background: linear-gradient(
+    108deg,
+    rgba(6, 60, 42, 0.95) 0%,
+    rgba(8, 110, 74, 0.8) 48%,
+    rgba(34, 160, 110, 0.26) 100%
+  );
+}
+
+.dashboard-banner-healthWorker .banner-image {
+  object-position: 78% center;
+}
+
+/* Medical Officer — clinical teal / slate (distinct from HW green) */
+.dashboard-banner-medicalOfficer {
+  background-color: #0f3f48;
+}
+
+.dashboard-banner-medicalOfficer.dashboard-role-banner .banner-overlay {
+  background: linear-gradient(
+    108deg,
+    rgba(12, 54, 64, 0.96) 0%,
+    rgba(15, 118, 110, 0.82) 50%,
+    rgba(45, 158, 170, 0.34) 100%
+  );
+}
+
+.dashboard-banner-medicalOfficer .banner-image {
+  object-position: 82% center;
+}
+
+/* Diagnostics — indigo / seafoam lab */
+.dashboard-banner-diagnostics {
+  background-color: #1e2a4a;
+}
+
+.dashboard-banner-diagnostics.dashboard-role-banner .banner-overlay {
+  background: linear-gradient(
+    108deg,
+    rgba(30, 42, 74, 0.95) 0%,
+    rgba(49, 74, 122, 0.8) 48%,
+    rgba(56, 158, 152, 0.32) 100%
+  );
+}
+
+.dashboard-banner-diagnostics .banner-image {
+  object-position: 86% center;
+}
+
+@keyframes dashboard-banner-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes dashboard-banner-content-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes dashboard-banner-kenburns {
+  from {
+    transform: scale(1.04) translate3d(0, 0, 0);
+  }
+  to {
+    transform: scale(1.1) translate3d(-1.2%, 0, 0);
+  }
+}
+
+@keyframes dashboard-banner-shimmer {
+  0%,
+  55% {
+    transform: translateX(-120%);
+  }
+  85%,
+  100% {
+    transform: translateX(120%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-hero-banner,
+  .dashboard-banner-content,
+  .banner-image,
+  .banner-shimmer {
+    animation: none !important;
+  }
+
+  .banner-image {
+    transform: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .dashboard-hero-banner.dashboard-role-banner {
+    align-items: flex-start;
+    padding: 18px;
+    min-height: 180px;
+  }
+
+  .dashboard-banner-content {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: var(--space-3, 12px);
+  }
+
+  .dashboard-banner-healthWorker .banner-image,
+  .dashboard-banner-medicalOfficer .banner-image,
+  .dashboard-banner-diagnostics .banner-image {
+    object-position: 70% center;
+  }
+}

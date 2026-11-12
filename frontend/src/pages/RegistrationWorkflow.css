@@ -1,0 +1,86 @@
+.registration-workflow-page {
+  display: grid;
+  gap: 1rem;
+}
+
+.registration-workflow-list {
+  display: grid;
+  gap: 1rem;
+}
+
+.registration-workflow-mandal-group {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.registration-workflow-mandal-group > h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.registration-workflow-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, 0.8fr);
+  gap: 1.25rem;
+  padding: 1.25rem;
+  border: 1px solid var(--border, #dce5df);
+  border-radius: 0.75rem;
+  background: var(--surface, #fff);
+}
+
+.registration-workflow-details h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.1rem;
+}
+
+.registration-workflow-details p {
+  margin: 0.4rem 0;
+  color: var(--text-muted, #5f6b65);
+}
+
+.registration-workflow-recommendation {
+  margin-top: 0.75rem;
+}
+
+.registration-workflow-actions {
+  display: grid;
+  align-content: start;
+  gap: 0.75rem;
+}
+
+.registration-workflow-actions label {
+  display: grid;
+  gap: 0.35rem;
+  font-weight: 600;
+}
+
+.registration-workflow-actions textarea {
+  width: 100%;
+  min-height: 5rem;
+  padding: 0.65rem;
+  border: 1px solid var(--border, #dce5df);
+  border-radius: 0.5rem;
+  font: inherit;
+}
+
+.registration-workflow-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.registration-workflow-empty {
+  padding: 2rem;
+  text-align: center;
+  color: var(--text-muted, #5f6b65);
+}
+
+@media (max-width: 760px) {
+  .registration-workflow-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .registration-workflow-buttons .btn {
+    flex: 1 1 100%;
+  }
+}

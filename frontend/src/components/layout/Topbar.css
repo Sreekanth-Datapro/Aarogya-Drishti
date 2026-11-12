@@ -1,0 +1,481 @@
+/* Modern Clean Healthcare Topbar Header */
+.admin-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-6);
+  background: var(--surface-white);
+  border-bottom: 1px solid var(--border-color);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  box-shadow: var(--shadow-xs);
+}
+
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.topbar-menu-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  min-height: 44px;
+  min-width: 44px;
+}
+
+.topbar-menu-toggle:hover {
+  background: var(--brand-50);
+}
+
+.topbar-titles {
+  display: flex;
+  flex-direction: column;
+}
+
+.brand-heading {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.brand-subtitle {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 2px 0 0 0;
+  font-weight: 500;
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* Date/Time Pill */
+.datetime-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--content-background);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gray-700);
+}
+
+.datetime-icon {
+  color: var(--primary-green);
+}
+
+/* Dropdown Container */
+.header-dropdown-wrap {
+  position: relative;
+}
+
+/* Language Pill Button */
+.topbar-action-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--content-background);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gray-700);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.topbar-action-pill:hover {
+  background: var(--brand-50);
+  border-color: var(--gray-300);
+}
+
+.pill-icon {
+  color: var(--primary-green);
+}
+
+.chevron-icon {
+  color: var(--gray-400);
+}
+
+/* Icon Buttons (Notifications) */
+.icon-action-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: var(--content-background);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  color: var(--gray-600);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.icon-action-btn:hover {
+  background: var(--brand-50);
+  color: var(--text-primary);
+}
+
+.notification-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: var(--danger-color);
+  color: var(--surface-white);
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 17px;
+  height: 17px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 3px;
+  border: 2px solid var(--surface-white);
+}
+
+.notification-panel {
+  right: 0;
+  width: min(360px, calc(100vw - 24px));
+  max-height: min(70vh, 480px);
+  overflow: auto;
+  padding: 10px;
+}
+
+.notification-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px 12px;
+  color: var(--text-primary);
+}
+
+.notification-panel-heading span,
+.notification-item time {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.notification-list {
+  display: grid;
+  gap: 4px;
+}
+
+.notification-item {
+  display: grid;
+  width: 100%;
+  gap: 5px;
+  padding: 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.notification-item:hover,
+.notification-item.unread {
+  background: var(--brand-50);
+}
+
+.notification-item span {
+  color: var(--gray-700);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.notification-item time {
+  justify-self: end;
+}
+
+.notification-empty,
+.notification-error {
+  margin: 8px 10px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.notification-error {
+  color: var(--danger-color);
+}
+
+/* Admin Profile Button */
+.admin-profile-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 10px;
+  transition: background 0.15s ease;
+}
+
+.admin-profile-btn:hover {
+  background: var(--content-background);
+}
+
+.admin-avatar-img {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1.5px solid var(--primary-green);
+}
+
+.admin-avatar-img.is-hidden {
+  display: none;
+}
+
+.admin-profile-meta {
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  min-width: 0;
+  max-width: 180px;
+}
+
+.admin-name-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.admin-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-role-title {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Popover Panels */
+.dropdown-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  background: var(--surface-white);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+  min-width: 180px;
+  padding: 6px;
+  z-index: 50;
+  animation: dropdown-fade-in 0.15s ease-out;
+}
+
+@keyframes dropdown-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--gray-700);
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.dropdown-item:hover {
+  background: var(--brand-50);
+  color: var(--text-primary);
+}
+
+.dropdown-item.active {
+  font-weight: 600;
+  color: var(--primary-green);
+}
+
+.check-icon {
+  color: var(--primary-green);
+}
+
+.dropdown-divider {
+  height: 1px;
+  background: var(--brand-50);
+  margin: 4px 0;
+}
+
+.logout-item {
+  color: var(--danger-color);
+}
+
+.logout-item:hover {
+  background: var(--danger-soft);
+  color: var(--danger-color);
+}
+
+/* Notifications Panel */
+.notif-panel {
+  width: 280px;
+  padding: 0;
+  overflow: hidden;
+}
+
+.notif-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  background: var(--content-background);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.notif-header h6 {
+  font-size: 13px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.notif-count {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--danger-color);
+  background: var(--danger-soft);
+  padding: 1px 6px;
+  border-radius: 6px;
+}
+
+.notif-list {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.notif-item {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.notif-text {
+  font-size: 12px;
+  color: var(--gray-700);
+  margin: 0 0 2px 0;
+}
+
+.notif-time {
+  font-size: 10px;
+  color: var(--gray-400);
+}
+
+.profile-panel-header {
+  padding: 8px 12px;
+}
+
+.profile-panel-header .user-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.profile-panel-header .user-role {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin: 2px 0 0 0;
+}
+
+/* Responsive Behavior */
+@media (max-width: 900px) {
+  .datetime-pill {
+    display: none;
+  }
+
+  .topbar-menu-toggle {
+    display: flex;
+  }
+
+  .admin-topbar {
+    gap: 10px;
+  }
+
+  .topbar-right {
+    margin-left: auto;
+  }
+}
+
+@media (max-width: 560px) {
+  .admin-topbar {
+    padding: 10px 14px;
+    gap: 8px;
+  }
+
+  .topbar-left {
+    min-width: 0;
+    gap: 10px;
+    flex: 1 1 auto;
+  }
+
+  .topbar-titles {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .brand-heading {
+    font-size: 16px;
+  }
+
+  .brand-subtitle {
+    overflow: hidden;
+    max-width: 48vw;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .admin-profile-meta {
+    display: none;
+  }
+
+  .topbar-right {
+    gap: 8px;
+  }
+}

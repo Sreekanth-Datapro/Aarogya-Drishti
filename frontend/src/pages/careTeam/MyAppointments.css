@@ -1,0 +1,101 @@
+.my-appointments-page {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.my-appointments-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.my-appointments-filters button {
+  border: 1px solid #c5d0c8;
+  background: #fff;
+  color: #1f3b2c;
+  border-radius: 999px;
+  padding: 0.4rem 0.9rem;
+  cursor: pointer;
+}
+
+.my-appointments-filters button.is-active {
+  background: #1f5b3a;
+  border-color: #1f5b3a;
+  color: #fff;
+}
+
+.my-appointments-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.my-appointment-card {
+  background: linear-gradient(180deg, #ffffff 0%, #f4f8f5 100%);
+  border: 1px solid #d5e0d8;
+  border-radius: 16px;
+  padding: 1rem 1.1rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.my-appointment-card header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.my-appointment-card h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  color: #163528;
+}
+
+.my-appointment-meta {
+  display: grid;
+  gap: 0.35rem;
+  color: #355445;
+  font-size: 0.95rem;
+}
+
+.my-appointment-meta strong {
+  color: #163528;
+}
+
+.my-appointment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.my-appointment-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.2rem 0.65rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.my-appointment-badge.scheduled { background: #e8f1ff; color: #1d4f91; }
+.my-appointment-badge.in_progress { background: #e7f8ed; color: #0f6b3c; }
+.my-appointment-badge.completed { background: #eceff3; color: #3d4a57; }
+.my-appointment-badge.cancelled,
+.my-appointment-badge.expired { background: #fdeceb; color: #9b1c1c; }
+.my-appointment-badge.unavailable { background: #f4efe6; color: #7a5b20; }
+
+.my-appointments-empty {
+  border: 1px dashed #c5d0c8;
+  border-radius: 14px;
+  padding: 1.5rem;
+  text-align: center;
+  color: #4d6357;
+  background: #f7faf8;
+}
+
+@media (min-width: 900px) {
+  .my-appointments-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

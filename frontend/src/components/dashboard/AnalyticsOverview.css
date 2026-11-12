@@ -1,0 +1,178 @@
+/* Analytics Overview Card Styling */
+.analytics-card {
+  background: var(--surface-white);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  padding: 18px 20px;
+  box-shadow: var(--card-shadow);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.analytics-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.analytics-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.analytics-title .title-icon {
+  color: var(--primary-green);
+}
+
+.analytics-title h3 {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.analytics-filter-dropdown {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--content-background);
+  border: 1px solid var(--border-color);
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--gray-600);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.analytics-filter-dropdown:hover {
+  background: var(--brand-50);
+}
+
+.analytics-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.analytics-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.analytics-tab-btn {
+  background: var(--content-background);
+  border: 1px solid transparent;
+  padding: 5px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.analytics-tab-btn:hover {
+  background: var(--border-color);
+  color: var(--text-primary);
+}
+
+.analytics-tab-btn.active {
+  background: var(--primary-green);
+  color: var(--surface-white);
+  font-weight: 600;
+  box-shadow: 0 2px 6px rgba(22, 124, 85, 0.22);
+}
+
+.analytics-legend {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--gray-600);
+}
+
+.legend-pill {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.pill-green {
+  background-color: var(--primary-green);
+}
+
+.pill-blue {
+  background-color: var(--accent-blue);
+}
+
+.analytics-chart-container {
+  position: relative;
+  width: 100%;
+  height: 190px;
+  margin-top: 6px;
+}
+
+.analytics-svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.chart-dot {
+  cursor: pointer;
+  transition: r 0.15s ease;
+}
+
+/* Tooltip on Hover */
+.chart-tooltip {
+  position: absolute;
+  top: 10px;
+  transform: translateX(-50%);
+  background: var(--text-primary);
+  color: var(--surface-white);
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  box-shadow: var(--shadow-md);
+  pointer-events: none;
+  z-index: 10;
+  white-space: nowrap;
+}
+
+.tooltip-title {
+  font-weight: 700;
+  margin-bottom: 2px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+  padding-bottom: 2px;
+}
+
+.tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.tooltip-row.green {
+  color: #34d399;
+}
+
+.tooltip-row.blue {
+  color: #60a5fa;
+}

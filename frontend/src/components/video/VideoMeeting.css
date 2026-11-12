@@ -1,0 +1,61 @@
+.video-meeting {
+  display: grid;
+  gap: 0.75rem;
+  min-height: 70vh;
+}
+
+.video-meeting-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.video-meeting-status {
+  color: #355445;
+  font-size: 0.95rem;
+}
+
+.video-meeting-frame-wrap {
+  position: relative;
+  width: 100%;
+  min-height: 60vh;
+  border: 1px solid #d5e0d8;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #0f1f18;
+}
+
+.video-meeting-frame {
+  width: 100%;
+  height: min(70vh, 720px);
+  min-height: 360px;
+}
+
+.video-meeting-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  text-align: center;
+  color: #f4f8f5;
+  background: rgba(15, 31, 24, 0.72);
+}
+
+.video-meeting-warning {
+  margin: 0;
+  color: #7a5b20;
+  background: #f4efe6;
+  border-radius: 8px;
+  padding: 0.65rem 0.8rem;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 640px) {
+  .video-meeting-frame {
+    height: 55vh;
+    min-height: 280px;
+  }
+}

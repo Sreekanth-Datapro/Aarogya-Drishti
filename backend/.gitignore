@@ -1,0 +1,2 @@
+# Private patient photos (tbl_screening_photos.private_key points here); never commit them
+storage/

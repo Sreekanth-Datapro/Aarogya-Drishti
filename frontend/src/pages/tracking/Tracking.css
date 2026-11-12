@@ -1,0 +1,273 @@
+.tracking-page .page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.tracking-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.tracking-stat {
+  background: linear-gradient(165deg, #f7faf8 0%, #eef5f1 100%);
+  border: 1px solid #d5e4db;
+  border-radius: 0.65rem;
+  padding: 0.85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.tracking-stat-label {
+  font-size: 0.8rem;
+  color: #4d6358;
+}
+
+.tracking-stat-value {
+  font-size: 1.35rem;
+  color: #1f3d32;
+}
+
+.tracking-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.tracking-filter {
+  border: 1px solid #c9d8cf;
+  background: #fff;
+  color: #2f4a3e;
+  border-radius: 999px;
+  padding: 0.35rem 0.85rem;
+  cursor: pointer;
+}
+
+.tracking-filter.is-active {
+  background: #1f3d32;
+  border-color: #1f3d32;
+  color: #fff;
+}
+
+.tracking-table-wrap {
+  overflow-x: auto;
+  border: 1px solid #d5e4db;
+  border-radius: 0.75rem;
+  background: #fff;
+}
+
+.tracking-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.tracking-table th,
+.tracking-table td {
+  text-align: left;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid #e6eee9;
+  vertical-align: top;
+}
+
+.tracking-table th {
+  font-size: 0.8rem;
+  color: #4d6358;
+  background: #f5f9f6;
+}
+
+.tracking-patient {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+}
+
+.tracking-patient div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.tracking-patient span {
+  font-size: 0.8rem;
+  color: #60786c;
+}
+
+.tracking-link {
+  color: #1f5c45;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.tracking-link:hover {
+  text-decoration: underline;
+}
+
+.tracking-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: #1f5c45;
+  text-decoration: none;
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.tracking-summary-block {
+  margin-bottom: 1.25rem;
+}
+
+.tracking-section-title {
+  margin: 0 0 0.75rem;
+  font-size: 1.05rem;
+  color: #1f3d32;
+}
+
+.tracking-mandatory {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.tracking-mandatory.is-compact {
+  gap: 0.55rem;
+}
+
+.tracking-mandatory-item {
+  background: #f7faf8;
+  border: 1px solid #d5e4db;
+  border-radius: 0.65rem;
+  padding: 0.85rem 1rem;
+  margin: 0;
+}
+
+.tracking-mandatory-item.is-overdue {
+  border-color: #d9a29a;
+  background: #fff6f4;
+}
+
+.tracking-mandatory-item dt {
+  font-size: 0.78rem;
+  color: #4d6358;
+  margin-bottom: 0.35rem;
+}
+
+.tracking-mandatory-item dd {
+  margin: 0;
+  font-weight: 600;
+  color: #1f3d32;
+  line-height: 1.35;
+}
+
+.tracking-care-fields {
+  margin-top: 0.75rem;
+}
+
+.tracking-care-fields.is-compact .tracking-mandatory-item {
+  padding: 0.65rem 0.85rem;
+}
+
+.tracking-medicine-list {
+  margin: 0.85rem 0 0;
+  padding-left: 1.1rem;
+  color: #1f3d32;
+}
+
+.tracking-medicine-list li + li {
+  margin-top: 0.35rem;
+}
+
+.tracking-card-list {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.tracking-patient-card {
+  background: #fff;
+  border: 1px solid #d5e4db;
+  border-radius: 0.85rem;
+  padding: 1rem;
+}
+
+.tracking-patient-card.is-overdue {
+  border-color: #d9a29a;
+}
+
+.tracking-patient-card-header,
+.tracking-patient-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.tracking-patient-card-header {
+  margin-bottom: 0.85rem;
+}
+
+.tracking-patient-card-footer {
+  margin-top: 0.85rem;
+}
+
+.tracking-panel-wide {
+  grid-column: 1 / -1;
+}
+
+.tracking-panels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 1rem;
+}
+
+.tracking-panel {
+  background: #fff;
+  border: 1px solid #d5e4db;
+  border-radius: 0.75rem;
+  padding: 1rem;
+}
+
+.tracking-panel h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+  color: #1f3d32;
+}
+
+.tracking-panel ul,
+.tracking-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.tracking-panel li,
+.tracking-timeline li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding-bottom: 0.55rem;
+  border-bottom: 1px solid #eef3f0;
+}
+
+.tracking-panel li span,
+.tracking-timeline li span,
+.tracking-panel li em,
+.tracking-timeline li em {
+  font-size: 0.8rem;
+  color: #60786c;
+  font-style: normal;
+}
+
+@media (max-width: 720px) {
+  .tracking-page .page-header {
+    flex-direction: column;
+  }
+}

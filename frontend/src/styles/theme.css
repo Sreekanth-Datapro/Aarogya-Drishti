@@ -1,0 +1,36 @@
+:root {
+  --primary-green: var(--brand-600);
+  --primary-green-dark: var(--brand-800);
+  --sidebar-background: #093322;
+  --content-background: var(--brand-50);
+  --surface-white: var(--gray-0);
+  --text-primary: var(--gray-900);
+  --text-secondary: var(--gray-500);
+  --border-color: var(--gray-200);
+  --success-color: var(--success);
+  --warning-color: var(--warning);
+  --danger-color: var(--danger);
+  --info-color: var(--info);
+  --card-radius: var(--radius-lg);
+  --card-shadow: var(--shadow-sm);
+  --page-spacing: var(--space-8);
+  --accent-blue: var(--chart-2);
+  --accent-orange: var(--chart-3);
+  --accent-purple: var(--chart-4);
+  --accent-teal: var(--chart-6);
+  --accent-purple-soft: #f5f3ff;
+  --accent-teal-soft: #f0fdfa;
+
+  --color-bg: var(--content-background);
+  --color-surface: var(--surface-white);
+  --color-text: var(--text-primary);
+  --color-text-muted: var(--text-secondary);
+  --color-border: var(--border-color);
+  --color-primary: var(--primary-green);
+  --color-primary-hover: var(--primary-green-dark);
+}
+
+::selection {
+  color: #ffffff;
+  background: var(--primary-green);
+}

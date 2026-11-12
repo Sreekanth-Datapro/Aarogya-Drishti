@@ -1,0 +1,344 @@
+.admin-page,
+.role-management-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 1480px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.admin-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.role-management-page .section {
+  margin-top: 0;
+}
+
+.role-management-page .table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.role-management-page .table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.role-management-page .data-table,
+.role-management-page .rbac-permission-matrix {
+  min-width: 760px;
+}
+
+.admin-page-title {
+  font-size: 24px;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.admin-page-subtitle {
+  color: var(--text-secondary);
+  margin: 4px 0 0;
+  font-size: 14px;
+}
+
+.filter-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(140px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.filter-grid label,
+.audit-toolbar label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.filter-grid input,
+.filter-grid select,
+.audit-toolbar input,
+.audit-toolbar select {
+  min-height: 40px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: white;
+  padding: 8px 10px;
+  color: var(--text-primary);
+}
+
+.admin-card-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.admin-card-grid.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.metric-card {
+  min-height: 105px;
+  padding: 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: white;
+  box-shadow: var(--card-shadow);
+}
+
+.metric-card span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.metric-card strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 28px;
+  color: var(--primary-green-dark);
+}
+
+.admin-panel {
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: white;
+  overflow: hidden;
+  box-shadow: var(--card-shadow);
+}
+
+.admin-panel-header {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.admin-panel-header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.admin-table-wrap {
+  overflow-x: auto;
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.admin-table th,
+.admin-table td {
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--border-color);
+  text-align: left;
+  vertical-align: top;
+}
+
+.admin-table th {
+  background: var(--content-background);
+  color: var(--text-secondary);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.status-badge {
+  display: inline-flex;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--gray-100);
+}
+
+.status-badge.success {
+  background: var(--success-soft);
+  color: var(--success-color);
+}
+
+.status-badge.warning {
+  background: var(--warning-soft);
+  color: var(--warning-color);
+}
+
+.status-badge.danger {
+  background: var(--danger-soft);
+  color: var(--danger-color);
+}
+
+.empty-state-box {
+  padding: 30px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.skeleton-block {
+  height: 92px;
+  border-radius: 12px;
+  background: linear-gradient(90deg, var(--gray-100), var(--surface-white), var(--gray-100));
+  background-size: 200% 100%;
+}
+
+.audit-toolbar {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.audit-pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+}
+
+.event-button {
+  border: 0;
+  background: transparent;
+  color: var(--primary-green);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  gap: 8px 12px;
+}
+
+.detail-grid dt {
+  color: var(--text-secondary);
+  font-weight: 700;
+}
+
+.detail-grid dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.metadata-code {
+  white-space: pre-wrap;
+  background: var(--content-background);
+  padding: 10px;
+  border-radius: 8px;
+}
+
+@media (max-width: 1100px) {
+  .filter-grid {
+    grid-template-columns: repeat(2, minmax(140px, 1fr));
+  }
+
+  .audit-toolbar {
+    grid-template-columns: repeat(3, minmax(120px, 1fr));
+  }
+
+  .admin-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+
+  .filter-grid,
+  .audit-toolbar,
+  .admin-card-grid,
+  .admin-card-grid.three {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-page-header {
+    flex-direction: column;
+  }
+}
+
+.rbac-permission-matrix {
+  min-width: max-content;
+}
+
+.rbac-permission-matrix th,
+.rbac-permission-matrix td {
+  min-width: 7rem;
+  text-align: center;
+}
+
+.rbac-permission-matrix th:first-child,
+.rbac-permission-matrix th[scope="row"] {
+  min-width: 13rem;
+  text-align: left;
+}
+
+.rbac-permission-matrix input[type="checkbox"] {
+  min-width: 1rem;
+  min-height: 1rem;
+}
+
+@media (max-width: 1100px) {
+  .role-management-page .grid.grid-2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .role-management-page .table-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .role-management-page .table-actions .btn {
+    width: 100%;
+  }
+
+  .role-management-page .data-table,
+  .role-management-page .rbac-permission-matrix {
+    min-width: 640px;
+  }
+}
+
+/* ---- Tiny-screen typography ---- */
+@media (max-width: 375px) {
+  .admin-page-title {
+    font-size: 20px;
+  }
+
+  .admin-page-subtitle {
+    font-size: 13px;
+  }
+
+  .metric-card strong {
+    font-size: 22px;
+  }
+}
+
+/* ---- Audit pagination stack on phones ---- */
+@media (max-width: 540px) {
+  .audit-pagination {
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-start;
+  }
+}
+
+/* ---- filter-grid 1-col on very small phones ---- */
+@media (max-width: 400px) {
+  .filter-grid {
+    grid-template-columns: 1fr;
+  }
+}

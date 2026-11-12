@@ -1,0 +1,355 @@
+/* ==========================================
+   Staff Management (Medical Officers, Specialists, Navigators)
+   Mobile first: one column, more columns on wider screens.
+   ========================================== */
+
+.staff-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ---------- header ---------- */
+.staff-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 20px;
+  border: 1px solid var(--gray-200, #e5e7eb);
+  border-radius: var(--radius-lg, 12px);
+  background: linear-gradient(135deg, #ecfdf5 0%, #ffffff 60%);
+}
+
+.staff-hero .page-title {
+  margin: 0;
+}
+
+.staff-hero .page-subtitle {
+  margin: 4px 0 0;
+}
+
+.staff-hero .btn {
+  align-self: stretch;
+  justify-content: center;
+}
+
+.staff-district-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--primary-green, #047857);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* ---------- number cards and filters ---------- */
+.staff-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.staff-search-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.staff-list-heading {
+  margin-bottom: 12px;
+}
+
+.staff-list-heading h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.staff-list-heading p {
+  margin: 4px 0 0;
+  color: var(--gray-500, #6b7280);
+  font-size: var(--text-sm, 14px);
+}
+
+/* ---------- table (cards on phones) ---------- */
+.staff-table-wrap {
+  overflow-x: auto;
+}
+
+.staff-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.staff-table th,
+.staff-table td {
+  padding: 12px 10px;
+  border-bottom: 1px solid var(--gray-100, #f3f4f6);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.staff-table th {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--gray-600, #4b5563);
+  background: var(--gray-50, #f9fafb);
+}
+
+.staff-table tbody tr:hover {
+  background: #f8fafc;
+}
+
+.staff-empty {
+  padding: 28px 12px !important;
+  text-align: center !important;
+  color: var(--gray-500, #6b7280);
+}
+
+.staff-person {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.staff-person div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.staff-person small {
+  color: var(--gray-500, #6b7280);
+  overflow-wrap: anywhere;
+}
+
+.staff-avatar {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #d1fae5;
+  color: #065f46;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* decorative initials of the person's name */
+.staff-avatar::before {
+  content: attr(data-initials);
+}
+
+.staff-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* ---------- create / edit dialogs ---------- */
+.modal.staff-modal {
+  max-width: 720px;
+}
+
+.staff-create-form {
+  width: 100%;
+}
+
+.staff-create-intro {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 12px;
+  border-radius: 12px;
+  background: #ecfdf5;
+}
+
+.staff-create-intro p {
+  margin: 3px 0 0;
+  color: var(--gray-500, #6b7280);
+  font-size: var(--text-sm, 14px);
+}
+
+.staff-create-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  background: var(--primary-green, #047857);
+  color: #ffffff;
+}
+
+.staff-create-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.staff-create-grid input[readonly] {
+  background: var(--gray-100, #f3f4f6);
+  color: var(--gray-700, #374151);
+  cursor: not-allowed;
+}
+
+.staff-hint {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--gray-500, #6b7280);
+  font-size: var(--text-sm, 14px);
+}
+
+.staff-specialty-list {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.staff-specialty-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 12px;
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #075985;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.staff-specialty-chip button {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(7, 89, 133, 0.12);
+  color: inherit;
+  cursor: pointer;
+}
+
+/* ---------- Medical Officer Mandal ---------- */
+.staff-span-2 {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.staff-mandal-line {
+  margin-top: 4px;
+}
+
+.staff-mandal-line small {
+  color: var(--gray-500, #6b7280);
+}
+
+/* Phones: each staff row becomes a card */
+@media (max-width: 720px) {
+  .staff-table thead {
+    display: none;
+  }
+
+  .staff-table tr {
+    display: block;
+    margin-bottom: 12px;
+    padding: 6px 4px;
+    border: 1px solid var(--gray-200, #e5e7eb);
+    border-radius: var(--radius-md, 10px);
+    background: #ffffff;
+  }
+
+  .staff-table td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 10px;
+    border-bottom: none;
+  }
+
+  .staff-table td::before {
+    content: attr(data-label);
+    flex-shrink: 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--gray-500, #6b7280);
+  }
+
+  .staff-table td.staff-empty {
+    justify-content: center;
+  }
+
+  .staff-table td.staff-empty::before {
+    content: none;
+  }
+
+  .staff-actions {
+    justify-content: flex-end;
+  }
+
+  .modal-backdrop {
+    padding: 8px;
+  }
+
+  .modal {
+    max-height: calc(100vh - 16px);
+  }
+
+  .staff-modal .modal-footer .btn {
+    flex: 1;
+    justify-content: center;
+  }
+}
+
+/* Tablets */
+@media (min-width: 640px) {
+  .staff-hero {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+
+  .staff-hero .btn {
+    align-self: flex-start;
+  }
+
+  .staff-search-grid,
+  .staff-create-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Desktops */
+@media (min-width: 1024px) {
+  .staff-stat-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .staff-search-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* Very small phones (320–375px): reduce hero padding and font */
+@media (max-width: 375px) {
+  .staff-hero {
+    padding: 14px;
+  }
+
+  .staff-hero .page-title {
+    font-size: 18px;
+  }
+}

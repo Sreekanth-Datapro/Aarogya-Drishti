@@ -567,6 +567,37 @@ async function verifyUserCode(req, user, code, key) {
   return step;
 }
 
+// ACTIVE accounts must never send PENDING_SETUP literals to Postgres: if that
+// enum label is missing, a single combined UPDATE fails even for ACTIVE rows.
+async function enableMfaForActiveUser(userId, step) {
+  return pool.query(
+    `UPDATE tbl_users
+        SET mfa_enabled = TRUE, mfa_enrolled_at = now(), mfa_last_used_step = $1
+      WHERE id = $2 AND mfa_enabled = FALSE AND status = 'ACTIVE'
+      RETURNING status`,
+    [step, userId]
+  );
+}
+
+async function enableMfaForPendingSetupUser(userId, step) {
+  return pool.query(
+    `UPDATE tbl_users
+        SET mfa_enabled = TRUE, mfa_enrolled_at = now(), mfa_last_used_step = $1,
+            status = 'ACTIVE'
+      WHERE id = $2 AND mfa_enabled = FALSE
+        AND status = 'PENDING_SETUP'
+        AND must_change_password = FALSE
+        AND EXISTS (
+          SELECT 1 FROM mst_roles
+           WHERE mst_roles.id = tbl_users.role_id
+             AND mst_roles.code IN ('DISTRICT_ADMIN', 'MEDICAL_OFFICER', 'SPECIALIST')
+             AND mst_roles.mfa_required = TRUE
+        )
+      RETURNING status`,
+    [step, userId]
+  );
+}
+
 exports.mfaEnable = async (req, res, next) => {
   try {
     const key = requireMfaKey();
@@ -578,27 +609,15 @@ exports.mfaEnable = async (req, res, next) => {
 
     const step = await verifyUserCode(req, user, req.body?.code, key);
 
-    const activation = await pool.query(
-      `UPDATE tbl_users
-          SET mfa_enabled = TRUE, mfa_enrolled_at = now(), mfa_last_used_step = $1,
-              status = CASE WHEN status = 'PENDING_SETUP' THEN 'ACTIVE' ELSE status END
-        WHERE id = $2 AND mfa_enabled = FALSE
-          AND (
-            status = 'ACTIVE'
-            OR (
-              status = 'PENDING_SETUP'
-              AND must_change_password = FALSE
-              AND EXISTS (
-                SELECT 1 FROM mst_roles
-                 WHERE mst_roles.id = tbl_users.role_id
-                   AND mst_roles.code IN ('DISTRICT_ADMIN', 'MEDICAL_OFFICER', 'SPECIALIST')
-                   AND mst_roles.mfa_required = TRUE
-              )
-            )
-          )
-        RETURNING status`,
-      [step, user.id]
-    );
+    let activation;
+    if (user.status === "ACTIVE") {
+      activation = await enableMfaForActiveUser(user.id, step);
+    } else if (canEnrollMfaForPendingDistrictAdmin(user)) {
+      activation = await enableMfaForPendingSetupUser(user.id, step);
+    } else {
+      throw new HttpError(409, "Account setup changed. Sign in again to continue.", "ACCOUNT_SETUP_CHANGED");
+    }
+
     if (!activation.rows.length) {
       throw new HttpError(409, "Account setup changed. Sign in again to continue.", "ACCOUNT_SETUP_CHANGED");
     }

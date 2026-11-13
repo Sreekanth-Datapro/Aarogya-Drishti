@@ -1,6 +1,7 @@
 const mockPoolQuery = jest.fn();
 const mockCreateSession = jest.fn();
 let mockDistrictAdmin = {};
+let mockActiveUser = {};
 
 jest.mock("../../db", () => ({ query: (...args) => mockPoolQuery(...args) }));
 jest.mock("bcryptjs", () => ({ compare: jest.fn(async () => true) }));
@@ -29,10 +30,15 @@ jest.mock("../../utils/jwt", () => ({
   generateAccessToken: jest.fn(() => "district-admin-access-token"),
   generateMfaToken: jest.fn((_id, stage) => `district-admin-${stage}-token`),
   verifyAccessToken: jest.fn(),
-  verifyMfaToken: jest.fn((token) => ({
-    sub: "district-admin-1",
-    stage: token === "district-admin-enroll-token" ? "enroll" : "verify",
-  })),
+  verifyMfaToken: jest.fn((token) => {
+    if (token === "active-admin-enroll-token") {
+      return { sub: "active-admin-1", stage: "enroll" };
+    }
+    return {
+      sub: "district-admin-1",
+      stage: token === "district-admin-enroll-token" ? "enroll" : "verify",
+    };
+  }),
 }));
 jest.mock("../../services/sessionService", () => ({
   createSession: (...args) => mockCreateSession(...args),
@@ -77,6 +83,35 @@ function districtAdmin() {
   };
 }
 
+function activeAdmin() {
+  return {
+    id: "active-admin-1",
+    username: "super.admin",
+    password_hash: "password-hash",
+    full_name: "Super Admin",
+    phone: null,
+    email: null,
+    designation: null,
+    role_id: 1,
+    role_name: "SUPER_ADMIN",
+    role_display_name: "Super administrator",
+    status: mockActiveUser.status,
+    failed_login_count: 0,
+    locked_until: null,
+    must_change_password: false,
+    mfa_enabled: mockActiveUser.mfaEnabled,
+    mfa_secret_encrypted: "encrypted-mfa-secret",
+    mfa_last_used_step: null,
+    mfa_required: true,
+  };
+}
+
+function mfaEnableSqlCalls() {
+  return mockPoolQuery.mock.calls
+    .map(([sql]) => sql)
+    .filter((sql) => typeof sql === "string" && sql.includes("SET mfa_enabled = TRUE"));
+}
+
 const app = express();
 app.use(express.json());
 app.post("/auth/login", authController.login);
@@ -93,20 +128,36 @@ beforeEach(() => {
     mustChangePassword: true,
     mfaEnabled: false,
   };
-  mockPoolQuery.mockImplementation(async (sql) => {
+  mockActiveUser = {
+    status: "ACTIVE",
+    mfaEnabled: false,
+  };
+  mockPoolQuery.mockImplementation(async (sql, params = []) => {
     if (sql.includes("lower(u.username) = lower($1)")) {
       return { rows: [districtAdmin()] };
     }
     if (sql.includes("u.id = $1 AND u.deleted_at IS NULL")) {
+      const id = params[0];
+      if (id === "active-admin-1") return { rows: [activeAdmin()] };
       return { rows: [districtAdmin()] };
     }
     if (sql.includes("SET mfa_enabled = TRUE")) {
-      if (mockDistrictAdmin.status !== "PENDING_SETUP" || mockDistrictAdmin.mustChangePassword) {
-        return { rows: [] };
+      if (sql.includes("PENDING_SETUP")) {
+        if (mockDistrictAdmin.status !== "PENDING_SETUP" || mockDistrictAdmin.mustChangePassword) {
+          return { rows: [] };
+        }
+        mockDistrictAdmin.status = "ACTIVE";
+        mockDistrictAdmin.mfaEnabled = true;
+        return { rows: [{ status: "ACTIVE" }] };
       }
-      mockDistrictAdmin.status = "ACTIVE";
-      mockDistrictAdmin.mfaEnabled = true;
-      return { rows: [{ status: "ACTIVE" }] };
+      if (sql.includes("status = 'ACTIVE'") && !sql.includes("PENDING_SETUP")) {
+        if (mockActiveUser.status !== "ACTIVE" || mockActiveUser.mfaEnabled) {
+          return { rows: [] };
+        }
+        mockActiveUser.mfaEnabled = true;
+        return { rows: [{ status: "ACTIVE" }] };
+      }
+      return { rows: [] };
     }
     return { rows: [] };
   });
@@ -149,7 +200,30 @@ test("keeps a District Admin pending after password set until successful MFA enr
   expect(activation.body.user.mfa_enabled).toBe(true);
   expect(mockDistrictAdmin.status).toBe("ACTIVE");
   expect(mockDistrictAdmin.mfaEnabled).toBe(true);
-  expect(mockPoolQuery.mock.calls.some(([sql]) =>
-    sql.includes("status = CASE WHEN status = 'PENDING_SETUP' THEN 'ACTIVE' ELSE status END")
-  )).toBe(true);
+
+  const enableSql = mfaEnableSqlCalls();
+  expect(enableSql).toHaveLength(1);
+  expect(enableSql[0]).toContain("status = 'PENDING_SETUP'");
+  expect(enableSql[0]).toContain("status = 'ACTIVE'");
+  expect(enableSql[0]).toContain("must_change_password = FALSE");
+  expect(enableSql[0]).toContain("mst_roles.mfa_required = TRUE");
+  expect(enableSql[0]).not.toContain("CASE WHEN");
+});
+
+test("ACTIVE MFA enable SQL never references PENDING_SETUP", async () => {
+  const activation = await request(app)
+    .post("/auth/mfa/enable")
+    .set("Authorization", "Bearer active-admin-enroll-token")
+    .send({ code: "123456" });
+
+  expect(activation.status).toBe(200);
+  expect(activation.body.user.mfa_enabled).toBe(true);
+  expect(mockActiveUser.mfaEnabled).toBe(true);
+  expect(mockActiveUser.status).toBe("ACTIVE");
+
+  const enableSql = mfaEnableSqlCalls();
+  expect(enableSql).toHaveLength(1);
+  expect(enableSql[0]).toContain("status = 'ACTIVE'");
+  expect(enableSql[0]).not.toContain("PENDING_SETUP");
+  expect(enableSql[0]).not.toContain("CASE WHEN");
 });

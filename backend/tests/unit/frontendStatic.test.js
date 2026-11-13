@@ -57,6 +57,10 @@ describe("frontendStatic SPA hosting", () => {
     expect((await request(app).get("/api/health")).body.ok).toBe(true);
     expect((await request(app).get("/api/missing")).body.message).toBe("API route not found");
 
+    const root = await request(app).get("/");
+    expect(root.status).toBe(200);
+    expect(root.text).toContain("id=\"root\"");
+
     const login = await request(app).get("/login");
     expect(login.status).toBe(200);
     expect(login.text).toContain("id=\"root\"");

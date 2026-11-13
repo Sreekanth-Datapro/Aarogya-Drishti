@@ -1,8 +1,14 @@
 
 import axios from "axios";
 
+// Production (single Render service): same-origin /api.
+// Local CRA default: localhost:5000. Override anytime with REACT_APP_API_URL.
+const apiBaseURL =
+  process.env.REACT_APP_API_URL ||
+  (process.env.NODE_ENV === "production" ? "/api" : "http://localhost:5000/api");
+
 const api = axios.create({
-  baseURL: process.env.REACT_APP_API_URL || "http://localhost:5000/api",
+  baseURL: apiBaseURL,
   timeout: 15000,
   // Sends the httpOnly refresh-token cookie to /auth/refresh
   withCredentials: true,

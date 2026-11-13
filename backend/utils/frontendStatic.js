@@ -75,7 +75,11 @@ function mountFrontendStatic(app, express, backendRoot = path.join(__dirname, ".
   );
 
   // Express 5 requires a named wildcard (/{*path}), not bare "*".
+  // Also bind "/" explicitly so the shell is served even if a proxy
+  // normalizes the path oddly; /{*path} already matches "/" in Express 5.3.
   const spa = createSpaFallback(resolved.indexHtml);
+  app.get("/", spa);
+  app.head("/", spa);
   app.get("/{*path}", spa);
   app.head("/{*path}", spa);
 

@@ -46,6 +46,7 @@ function createMockClient(options = {}) {
     rowsByFilename = null,
     verificationRows = [],
     baselineOkByFile = {},
+    newerRegistrationWorkflow = false,
     superAdminRoleExists = true,
     bootstrapAccount = null,
     otherSuperAdminCount = 0,
@@ -92,6 +93,21 @@ function createMockClient(options = {}) {
       }
       if (/ck_reg_reviewed/i.test(text) && /ck_facility_parent/i.test(text)) {
         return { rows: [{ ok: baselineOkByFile["001_schema_fixes.sql"] === true }] };
+      }
+      if (
+        /previous_refresh_token_hash/i.test(text) &&
+        /tbl_password_reset_tokens/i.test(text) &&
+        /fn_validate_registration_reviewer/i.test(text) &&
+        /AS ok/i.test(text)
+      ) {
+        return { rows: [{ ok: baselineOkByFile["002_security_core.sql"] === true }] };
+      }
+      if (
+        /fn_validate_registration_reviewer/i.test(text) &&
+        /trg_reg_reviewer_role/i.test(text) &&
+        !/previous_refresh_token_hash/i.test(text)
+      ) {
+        return { rows: [{ ok: newerRegistrationWorkflow === true }] };
       }
       if (/tbl_specialist_consultation_decisions/i.test(text) && /AS ok/i.test(text)) {
         return {
@@ -255,6 +271,142 @@ describe("runMigrations safeguards", () => {
     ).rejects.toThrow(/Applied migration file modified: 001_schema_fixes\.sql/);
   });
 
+  test("baselines 002 when security-core catalog and newer registration workflow match", async () => {
+    const rows = appliedRows().filter((r) => r.filename !== "002_security_core.sql");
+    const client = createMockClient({
+      rowsByFilename: rows,
+      baselineOkByFile: {
+        "001_schema_fixes.sql": true,
+        "002_security_core.sql": true,
+      },
+    });
+
+    const results = await runMigrations(client, {
+      apply: true,
+      defer003: true,
+      log: () => {},
+    });
+
+    expect(results).toContainEqual({
+      file: "002_security_core.sql",
+      action: "baseline",
+    });
+    expect(
+      client.queries.some(
+        (q) =>
+          /INSERT INTO schema_migrations/i.test(q.sql) &&
+          /'baseline'/i.test(q.sql) &&
+          q.params &&
+          q.params[0] === "002_security_core.sql"
+      )
+    ).toBe(true);
+    expect(
+      client.queries.some(
+        (q) =>
+          /DROP TRIGGER IF EXISTS trg_reg_reviewer_role/i.test(q.sql) ||
+          (/fn_require_role\('reviewed_by'/i.test(q.sql) && /002_security/i.test(q.sql))
+      )
+    ).toBe(false);
+  });
+
+  test("blocks re-applying 002 when baseline fails but newer registration workflow exists", async () => {
+    const rows = appliedRows().filter(
+      (r) => r.filename !== "001_schema_fixes.sql" && r.filename !== "002_security_core.sql"
+    );
+    const client = createMockClient({
+      rowsByFilename: rows,
+      baselineOkByFile: {
+        "001_schema_fixes.sql": true,
+        "002_security_core.sql": false,
+      },
+      newerRegistrationWorkflow: true,
+    });
+
+    await expect(
+      runMigrations(client, { apply: true, defer003: true, log: () => {} })
+    ).rejects.toThrow(/fn_validate_registration_reviewer/);
+
+    expect(
+      client.queries.some(
+        (q) =>
+          /INSERT INTO schema_migrations/i.test(q.sql) &&
+          q.params &&
+          q.params[0] === "002_security_core.sql"
+      )
+    ).toBe(false);
+    expect(
+      client.queries.some((q) => /DROP TRIGGER IF EXISTS trg_reg_reviewer_role/i.test(q.sql))
+    ).toBe(false);
+  });
+
+  test("still applies 002 on a legacy schema when baseline fails and newer workflow is absent", async () => {
+    const rows = appliedRows().filter((r) => r.filename !== "002_security_core.sql");
+    const client = createMockClient({
+      rowsByFilename: rows,
+      baselineOkByFile: {
+        "001_schema_fixes.sql": true,
+        "002_security_core.sql": false,
+      },
+      newerRegistrationWorkflow: false,
+    });
+    const originalQuery = client.query.bind(client);
+    client.query = async (sql, params) => {
+      const text = String(sql);
+      if (/INSERT INTO mst_roles/i.test(text) && /SUPER_ADMIN/i.test(text)) {
+        client.queries.push({ sql: text, params });
+        return { rows: [] };
+      }
+      if (/tbl_password_reset_tokens/i.test(text) && /CREATE TABLE/i.test(text)) {
+        client.queries.push({ sql: text, params });
+        return { rows: [] };
+      }
+      if (/DROP TRIGGER IF EXISTS trg_reg_reviewer_role/i.test(text)) {
+        client.queries.push({ sql: text, params });
+        return { rows: [] };
+      }
+      if (/fn_user_has_patient_access/i.test(text) && /CREATE OR REPLACE FUNCTION/i.test(text)) {
+        client.queries.push({ sql: text, params });
+        return { rows: [] };
+      }
+      if (/previous_refresh_token_hash/i.test(text) && /ALTER TABLE/i.test(text)) {
+        client.queries.push({ sql: text, params });
+        return { rows: [] };
+      }
+      if (/mfa_last_used_step/i.test(text) && /ALTER TABLE/i.test(text)) {
+        client.queries.push({ sql: text, params });
+        return { rows: [] };
+      }
+      if (/INSERT INTO mst_permissions/i.test(text) || /INSERT INTO tbl_role_permissions/i.test(text)) {
+        client.queries.push({ sql: text, params });
+        return { rows: [] };
+      }
+      if (/CREATE INDEX IF NOT EXISTS idx_sessions_previous_hash/i.test(text)) {
+        client.queries.push({ sql: text, params });
+        return { rows: [] };
+      }
+      if (/CREATE INDEX IF NOT EXISTS idx_reset_tokens_user_open/i.test(text)) {
+        client.queries.push({ sql: text, params });
+        return { rows: [] };
+      }
+      if (/CREATE TRIGGER trg_reg_reviewer_role/i.test(text)) {
+        client.queries.push({ sql: text, params });
+        return { rows: [] };
+      }
+      return originalQuery(sql, params);
+    };
+
+    const results = await runMigrations(client, {
+      apply: true,
+      defer003: true,
+      log: () => {},
+    });
+
+    expect(results).toContainEqual({
+      file: "002_security_core.sql",
+      action: "applied",
+    });
+  });
+
   test("baselines 022 when catalog check matches", async () => {
     const rows = appliedRows().filter(
       (r) => r.filename !== "022_specialist_consultation_decisions.sql"
@@ -338,7 +490,7 @@ describe("runMigrations safeguards", () => {
     ).toBe(false);
   });
 
-  test("defer-003 applies only 001–002 and never executes 003 or 004", async () => {
+  test("defer-003 baselines 001–002 when present and never executes 003 or 004", async () => {
     const rows = appliedRows().filter(
       (r) =>
         !r.filename.startsWith("001_") &&
@@ -349,14 +501,17 @@ describe("runMigrations safeguards", () => {
     const logs = [];
     const client = createMockClient({
       rowsByFilename: rows,
-      baselineOkByFile: { "001_schema_fixes.sql": true },
+      baselineOkByFile: {
+        "001_schema_fixes.sql": true,
+        "002_security_core.sql": true,
+      },
     });
     const originalQuery = client.query.bind(client);
     client.query = async (sql, params) => {
       const text = String(sql);
       if (
         text.length > 80 &&
-        !/schema_migrations|pg_advisory|to_regclass|current_database|ck_reg_reviewed|BEGIN|COMMIT|ROLLBACK/i.test(
+        !/schema_migrations|pg_advisory|to_regclass|current_database|ck_reg_reviewed|previous_refresh_token_hash|fn_validate_registration_reviewer|BEGIN|COMMIT|ROLLBACK/i.test(
           text
         )
       ) {
@@ -378,7 +533,7 @@ describe("runMigrations safeguards", () => {
     expect(results.some((r) => r.file.startsWith("001_") && r.action === "baseline")).toBe(
       true
     );
-    expect(results.some((r) => r.file.startsWith("002_") && r.action === "applied")).toBe(
+    expect(results.some((r) => r.file.startsWith("002_") && r.action === "baseline")).toBe(
       true
     );
     expect(results).toContainEqual({

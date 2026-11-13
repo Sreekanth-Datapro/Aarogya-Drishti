@@ -111,13 +111,122 @@ function summarizeMigrationStatusForBootstrap(status) {
   };
 }
 
-// Databases built from ALL_IN_ONE (1).sql already contain these changes,
-// so they are recorded as a baseline instead of being re-applied.
+// Databases built from ALL_IN_ONE / AAROGYA_BOOTSTRAP_FINAL already contain these
+// changes, so they are recorded as a baseline instead of being re-applied.
 const BASELINE_CHECKS = {
   "001_schema_fixes.sql": `
     SELECT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_reg_reviewed')
        AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_facility_parent')
        AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_video_slot_guard') AS ok`,
+
+  // 002_security_core.sql: verify every important schema/data effect.
+  // Accept either the original trg_reg_reviewer_role → fn_require_role path
+  // or the newer two-stage fn_validate_registration_reviewer workflow shipped in
+  // bootstrap (intentional replacement — never re-apply 002 over it).
+  "002_security_core.sql": `
+    SELECT
+      EXISTS (SELECT 1 FROM mst_roles WHERE code = 'SUPER_ADMIN')
+      AND (
+            SELECT count(*) FROM mst_permissions
+             WHERE code IN (
+               'master.view', 'master.manage', 'user.create_staff',
+               'user.create_admin', 'registration.verify', 'settings.manage'
+             )
+          ) = 6
+      AND EXISTS (
+            SELECT 1
+              FROM tbl_role_permissions rp
+              JOIN mst_roles r ON r.id = rp.role_id
+              JOIN mst_permissions p ON p.id = rp.permission_id
+             WHERE r.code = 'SUPER_ADMIN' AND p.code = 'user.create_admin'
+          )
+      AND EXISTS (
+            SELECT 1
+              FROM tbl_role_permissions rp
+              JOIN mst_roles r ON r.id = rp.role_id
+              JOIN mst_permissions p ON p.id = rp.permission_id
+             WHERE r.code = 'SYSTEM_ADMIN' AND p.code = 'user.create_staff'
+          )
+      AND EXISTS (
+            SELECT 1
+              FROM tbl_role_permissions rp
+              JOIN mst_roles r ON r.id = rp.role_id
+              JOIN mst_permissions p ON p.id = rp.permission_id
+             WHERE r.code = 'MEDICAL_OFFICER' AND p.code = 'registration.verify'
+          )
+      AND EXISTS (
+            SELECT 1
+              FROM tbl_role_permissions rp
+              JOIN mst_roles r ON r.id = rp.role_id
+              JOIN mst_permissions p ON p.id = rp.permission_id
+             WHERE r.code = 'MEDICAL_OFFICER' AND p.code = 'patient.register'
+          )
+      AND EXISTS (
+            SELECT 1
+              FROM pg_trigger t
+              JOIN pg_class c ON c.oid = t.tgrelid
+              JOIN pg_namespace n ON n.oid = c.relnamespace
+              JOIN pg_proc p ON p.oid = t.tgfoid
+             WHERE n.nspname = 'public'
+               AND c.relname = 'tbl_user_registration_requests'
+               AND t.tgname = 'trg_reg_reviewer_role'
+               AND NOT t.tgisinternal
+               AND (
+                    p.proname = 'fn_validate_registration_reviewer'
+                 OR (
+                      p.proname = 'fn_require_role'
+                      AND pg_get_triggerdef(t.oid) ILIKE '%SYSTEM_ADMIN%SUPER_ADMIN%'
+                    )
+               )
+          )
+      AND to_regprocedure('public.fn_user_has_patient_access(uuid,uuid)') IS NOT NULL
+      AND EXISTS (
+            SELECT 1 FROM pg_proc
+             WHERE proname = 'fn_user_has_patient_access'
+               AND prosrc ILIKE '%SUPER_ADMIN%'
+          )
+      AND EXISTS (
+            SELECT 1 FROM information_schema.columns
+             WHERE table_schema = 'public'
+               AND table_name = 'tbl_user_sessions'
+               AND column_name = 'previous_refresh_token_hash'
+          )
+      AND EXISTS (
+            SELECT 1 FROM pg_indexes
+             WHERE schemaname = 'public'
+               AND tablename = 'tbl_user_sessions'
+               AND indexname = 'idx_sessions_previous_hash'
+          )
+      AND EXISTS (
+            SELECT 1 FROM information_schema.columns
+             WHERE table_schema = 'public'
+               AND table_name = 'tbl_users'
+               AND column_name = 'mfa_last_used_step'
+          )
+      AND EXISTS (
+            SELECT 1 FROM information_schema.columns
+             WHERE table_schema = 'public'
+               AND table_name = 'tbl_users'
+               AND column_name = 'mfa_enrolled_at'
+          )
+      AND to_regclass('public.tbl_password_reset_tokens') IS NOT NULL
+      AND (
+            SELECT count(*) FROM information_schema.columns
+             WHERE table_schema = 'public'
+               AND table_name = 'tbl_password_reset_tokens'
+               AND column_name IN (
+                 'id', 'user_id', 'token_hash', 'requested_ip',
+                 'created_at', 'expires_at', 'used_at'
+               )
+          ) = 7
+      AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_reset_token_lifetime')
+      AND EXISTS (
+            SELECT 1 FROM pg_indexes
+             WHERE schemaname = 'public'
+               AND tablename = 'tbl_password_reset_tokens'
+               AND indexname = 'idx_reset_tokens_user_open'
+          )
+      AS ok`,
 
   // Strict catalog match for objects also shipped in ALL_IN_ONE (1).sql.
   // Do not baseline unless every important object is present.
@@ -170,6 +279,45 @@ const BASELINE_CHECKS = {
       AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_specialist_decision_signed_immutable' AND NOT tgisinternal)
       AS ok`,
 };
+
+/**
+ * True when the DB already has the newer two-stage registration reviewer
+ * workflow. Re-applying 002_security_core.sql would DROP/CREATE
+ * trg_reg_reviewer_role with the older fn_require_role path and must be blocked.
+ */
+async function hasNewerRegistrationReviewerWorkflow(client) {
+  const result = await client.query(`
+    SELECT EXISTS (
+      SELECT 1
+        FROM pg_trigger t
+        JOIN pg_class c ON c.oid = t.tgrelid
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        JOIN pg_proc p ON p.oid = t.tgfoid
+       WHERE n.nspname = 'public'
+         AND c.relname = 'tbl_user_registration_requests'
+         AND t.tgname = 'trg_reg_reviewer_role'
+         AND NOT t.tgisinternal
+         AND p.proname = 'fn_validate_registration_reviewer'
+    ) AS ok`);
+  return Boolean(result.rows[0]?.ok);
+}
+
+async function assertSafeToApplyMigration(client, file) {
+  if (file !== "002_security_core.sql") return;
+
+  if (await hasNewerRegistrationReviewerWorkflow(client)) {
+    throw new Error(
+      "002_security_core.sql baseline verification failed, but this database already has " +
+        "trg_reg_reviewer_role → fn_validate_registration_reviewer (two-stage Medical Officer / " +
+        "District Admin registration workflow). Re-applying 002 would replace that newer " +
+        "workflow with the older fn_require_role('reviewed_by', 'SYSTEM_ADMIN,SUPER_ADMIN') " +
+        "path and is blocked. Ensure every 002 security-core object is present so baseline " +
+        "can succeed (SUPER_ADMIN role, 002 permissions and role grants, session rotation " +
+        "column, MFA columns, password-reset table), then re-run migrate. " +
+        "Do not insert schema_migrations rows manually."
+    );
+  }
+}
 
 function sha256(buffer) {
   return crypto.createHash("sha256").update(buffer).digest("hex");
@@ -615,7 +763,7 @@ async function runMigrations(
       const baselineCheck = BASELINE_CHECKS[migration.file];
       if (baselineCheck) {
         const check = await client.query(baselineCheck);
-        if (check.rows[0].ok) {
+        if (check.rows[0]?.ok) {
           await client.query(
             "INSERT INTO schema_migrations (filename, checksum, applied_by) VALUES ($1, $2, 'baseline')",
             [migration.file, migration.checksum]
@@ -624,6 +772,9 @@ async function runMigrations(
           results.push({ file: migration.file, action: "baseline" });
           continue;
         }
+
+        // Baseline incomplete: refuse unsafe re-apply of known incompatible migrations.
+        await assertSafeToApplyMigration(client, migration.file);
       }
 
       const started = Date.now();
@@ -697,6 +848,9 @@ module.exports = {
   is003DualApproved,
   summarizeMigrationStatusForBootstrap,
   resolveKnownBootstrapPromotionChecksum,
+  BASELINE_CHECKS,
+  hasNewerRegistrationReviewerWorkflow,
+  assertSafeToApplyMigration,
   isBeforeBootstrapPromotion,
   isAfterBootstrapPromotion,
   assertIsolatedTestDatabaseFor003,

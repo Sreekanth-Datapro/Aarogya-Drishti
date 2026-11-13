@@ -76,43 +76,113 @@ BEGIN
     ARRAY[format('INSERT INTO tbl_users (username,password_hash,full_name,role_id) SELECT %L,%L,%L,id FROM mst_roles WHERE code=%L', 'ZZ_T_HW', 'x', 'x', 'HEALTH_WORKER')], 'uq_users_username');
 
   step := 'registration requests';
+  -- Migration 015: two-stage registration (MO recommend, District Admin finalize).
+  UPDATE tbl_users SET district_id = dist WHERE id = u_da;
   INSERT INTO tbl_user_facility_assignments (user_id, facility_id, is_primary)
   VALUES (u_mo, f_phc, true);
+  INSERT INTO tbl_medical_officer_mandal_assignments (user_id, mandal_id, assigned_by)
+  VALUES (u_mo, mandal2, u_super);
 
-  INSERT INTO tbl_user_registration_requests (full_name, username, phone, designation, facility_id, mandal_id, village_id, language_id, password_hash, terms_accepted_at)
-  VALUES ('Test HW', 'zz_t_reg', '9999999999', 'ASHA', f_phc, mandal2, v1, lang_te, 'x', now()) RETURNING id INTO reg1;
-  PERFORM pg_temp.chk('pending registration with mandal_id/village_id accepted', true);
-  INSERT INTO tbl_user_registration_requests (full_name, username, phone, designation, facility_id, mandal_id, village_id, language_id, password_hash, terms_accepted_at)
-  VALUES ('Test HW Other Facility', 'zz_t_reg_other', '9999999998', 'ANM', f_hosp, mandal2, v1, lang_te, 'x', now()) RETURNING id INTO reg2;
+  INSERT INTO tbl_user_registration_requests
+    (full_name, username, phone, designation, facility_id, mandal_id, village_id,
+     language_id, password_hash, terms_accepted_at, workflow_version,
+     status_token_hash, status_token_expires_at)
+  VALUES
+    ('Test HW', 'zz_t_reg', '9999999999', 'ASHA', f_phc, mandal2, v1, lang_te, 'x',
+     now(), 1, repeat('a', 64), now() + interval '30 days')
+  RETURNING id INTO reg1;
+  PERFORM pg_temp.chk('pending registration with status token accepted', true);
+  INSERT INTO tbl_user_registration_requests
+    (full_name, username, phone, designation, facility_id, mandal_id, village_id,
+     language_id, password_hash, terms_accepted_at, workflow_version,
+     status_token_hash, status_token_expires_at)
+  VALUES
+    ('Test HW Other Facility', 'zz_t_reg_other', '9999999998', 'ANM', f_phc, mandal2, v1,
+     lang_te, 'x', now(), 1, repeat('b', 64), now() + interval '30 days')
+  RETURNING id INTO reg2;
+  PERFORM pg_temp.ef('registration without status token blocked',
+    ARRAY[format(
+      'INSERT INTO tbl_user_registration_requests (full_name,username,phone,designation,facility_id,mandal_id,village_id,language_id,password_hash,terms_accepted_at) VALUES (%L,%L,%L,%L,%s,%s,%s,%s,%L,now())',
+      'x', 'zz_t_reg_notoken', '9999999997', 'ANM', f_phc, mandal2, v1, lang_te, 'x'
+    )], 'valid status token');
   PERFORM pg_temp.ef('second pending request with same username blocked',
-    ARRAY[format('INSERT INTO tbl_user_registration_requests (full_name,username,phone,designation,facility_id,mandal_id,village_id,language_id,password_hash,terms_accepted_at) VALUES (%L,%L,%L,%L,%s,%s,%s,%s,%L,now())', 'x', 'ZZ_T_REG', '9999999999', 'ANM', f_phc, mandal2, v1, lang_te, 'x')], 'uq_reg_pending_username');
-  PERFORM pg_temp.ef('reject without reviewer blocked',
-    ARRAY[format('UPDATE tbl_user_registration_requests SET status=%L, rejection_reason=%L WHERE id=%L', 'REJECTED', 'dup', reg1)], 'Registration reviewer must be an active MEDICAL_OFFICER');
-  PERFORM pg_temp.ef('health worker cannot review registrations',
-    ARRAY[format('UPDATE tbl_user_registration_requests SET status=%L, rejection_reason=%L, reviewed_by=%L, reviewed_at=now() WHERE id=%L', 'REJECTED', 'dup', u_hw, reg1)], 'Registration reviewer must be an active MEDICAL_OFFICER');
-  PERFORM pg_temp.ef('SYSTEM_ADMIN cannot reject registrations',
-    ARRAY[format('UPDATE tbl_user_registration_requests SET status=%L, rejection_reason=%L, reviewed_by=%L, reviewed_at=now() WHERE id=%L', 'REJECTED', 'dup', u_sa, reg1)], 'Registration reviewer must be an active MEDICAL_OFFICER');
-  PERFORM pg_temp.ef('SUPER_ADMIN cannot reject registrations',
-    ARRAY[format('UPDATE tbl_user_registration_requests SET status=%L, rejection_reason=%L, reviewed_by=%L, reviewed_at=now() WHERE id=%L', 'REJECTED', 'dup', u_super, reg1)], 'Registration reviewer must be an active MEDICAL_OFFICER');
-  PERFORM pg_temp.ef('Medical Officer cannot review an unassigned facility',
-    ARRAY[format('UPDATE tbl_user_registration_requests SET status=%L, rejection_reason=%L, reviewed_by=%L, reviewed_at=now() WHERE id=%L', 'REJECTED', 'dup', u_mo_unassigned, reg2)], 'Registration reviewer must have a current assignment');
+    ARRAY[format(
+      'INSERT INTO tbl_user_registration_requests (full_name,username,phone,designation,facility_id,mandal_id,village_id,language_id,password_hash,terms_accepted_at,workflow_version,status_token_hash,status_token_expires_at) VALUES (%L,%L,%L,%L,%s,%s,%s,%s,%L,now(),1,%L,now() + interval %L)',
+      'x', 'ZZ_T_REG', '9999999999', 'ANM', f_phc, mandal2, v1, lang_te, 'x', repeat('c', 64), '30 days'
+    )], 'uq_reg_pending_username');
+  PERFORM pg_temp.ef('finalize without prior recommendation blocked',
+    ARRAY[format(
+      'SELECT set_config(%L,%L,true); UPDATE tbl_user_registration_requests SET status=%L, rejection_reason=%L, reviewed_by=%L, reviewed_at=now() WHERE id=%L',
+      'app.actor_id', u_da::text, 'REJECTED', 'dup', u_da, reg1
+    )], 'Final decision requires a prior recommendation');
+  PERFORM pg_temp.ef('health worker cannot recommend registrations',
+    ARRAY[format(
+      'SELECT set_config(%L,%L,true); UPDATE tbl_user_registration_requests SET mo_recommended_by=%L, mo_recommended_at=now(), mo_recommendation=%L, mo_recommendation_note=%L WHERE id=%L',
+      'app.actor_id', u_hw::text, u_hw, 'RECOMMENDED', 'ok', reg1
+    )], 'Recommending Medical Officer must be active and assigned');
+  PERFORM pg_temp.ef('unassigned Medical Officer cannot recommend',
+    ARRAY[format(
+      'SELECT set_config(%L,%L,true); UPDATE tbl_user_registration_requests SET mo_recommended_by=%L, mo_recommended_at=now(), mo_recommendation=%L, mo_recommendation_note=%L WHERE id=%L',
+      'app.actor_id', u_mo_unassigned::text, u_mo_unassigned, 'RECOMMENDED', 'ok', reg2
+    )], 'Recommending Medical Officer must be active and assigned');
+
+  PERFORM set_config('app.actor_id', u_mo::text, true);
+  UPDATE tbl_user_registration_requests
+     SET mo_recommended_by = u_mo, mo_recommended_at = now(),
+         mo_recommendation = 'RECOMMENDED', mo_recommendation_note = 'Verified'
+   WHERE id = reg1;
+  PERFORM pg_temp.chk('assigned Medical Officer recommendation accepted', true);
+
+  PERFORM pg_temp.ef('SUPER_ADMIN cannot finalize registrations',
+    ARRAY[format(
+      'SELECT set_config(%L,%L,true); UPDATE tbl_user_registration_requests SET status=%L, rejection_reason=%L, reviewed_by=%L, reviewed_at=now() WHERE id=%L',
+      'app.actor_id', u_super::text, 'REJECTED', 'dup', u_super, reg1
+    )], 'Final decision must be made by the active District Admin');
+  PERFORM pg_temp.ef('SYSTEM_ADMIN cannot finalize registrations',
+    ARRAY[format(
+      'SELECT set_config(%L,%L,true); UPDATE tbl_user_registration_requests SET status=%L, rejection_reason=%L, reviewed_by=%L, reviewed_at=now() WHERE id=%L',
+      'app.actor_id', u_sa::text, 'REJECTED', 'dup', u_sa, reg1
+    )], 'Final decision must be made by the active District Admin');
   PERFORM pg_temp.ef('blank rejection reason blocked',
-    ARRAY[format('UPDATE tbl_user_registration_requests SET status=%L, rejection_reason=%L, reviewed_by=%L, reviewed_at=now() WHERE id=%L', 'REJECTED', '   ', u_mo, reg1)], 'ck_reg_rejection_reason_nonblank');
+    ARRAY[format(
+      'SELECT set_config(%L,%L,true); UPDATE tbl_user_registration_requests SET status=%L, rejection_reason=%L, reviewed_by=%L, reviewed_at=now() WHERE id=%L',
+      'app.actor_id', u_da::text, 'REJECTED', '   ', u_da, reg1
+    )], 'Final rejection requires a reason');
   PERFORM pg_temp.ef('tab and newline rejection reason blocked',
-    ARRAY[format('UPDATE tbl_user_registration_requests SET status=%L, rejection_reason=%L, reviewed_by=%L, reviewed_at=now() WHERE id=%L', 'REJECTED', E'\t\n', u_mo, reg1)], 'ck_reg_rejection_reason_nonblank');
+    ARRAY[format(
+      'SELECT set_config(%L,%L,true); UPDATE tbl_user_registration_requests SET status=%L, rejection_reason=%L, reviewed_by=%L, reviewed_at=now() WHERE id=%L',
+      'app.actor_id', u_da::text, 'REJECTED', E'\t\n', u_da, reg1
+    )], 'Final rejection requires a reason');
   PERFORM pg_temp.ef('approve without created user blocked',
-    ARRAY[format('UPDATE tbl_user_registration_requests SET status=%L, reviewed_by=%L, reviewed_at=now() WHERE id=%L', 'APPROVED', u_mo, reg1)], 'ck_reg_approved');
+    ARRAY[format(
+      'SELECT set_config(%L,%L,true); UPDATE tbl_user_registration_requests SET status=%L, reviewed_by=%L, reviewed_at=now() WHERE id=%L',
+      'app.actor_id', u_da::text, 'APPROVED', u_da, reg1
+    )], 'Final approval must reference the created Health Worker');
+
   u_new := pg_temp.mk_user('zz_t_reg', 'HEALTH_WORKER');
-  UPDATE tbl_user_registration_requests SET status = 'APPROVED', reviewed_by = u_mo, reviewed_at = now(), created_user_id = u_new WHERE id = reg1;
-  PERFORM pg_temp.chk('assigned Medical Officer approval with created user accepted', true);
-  PERFORM pg_temp.ef('finalized request status cannot be changed',
-    ARRAY[format('UPDATE tbl_user_registration_requests SET status=%L WHERE id=%L', 'REJECTED', reg1)], 'A finalized registration request cannot change status');
+  UPDATE tbl_users SET district_id = dist WHERE id = u_new;
+  INSERT INTO tbl_user_facility_assignments (user_id, facility_id, is_primary)
+  VALUES (u_new, f_phc, true);
+  INSERT INTO tbl_health_worker_location_assignments
+    (user_id, district_id, mandal_id, village_id, facility_id, assigned_by)
+  VALUES (u_new, dist, mandal2, v1, f_phc, u_da);
+  PERFORM set_config('app.actor_id', u_da::text, true);
+  UPDATE tbl_user_registration_requests
+     SET status = 'APPROVED', reviewed_by = u_da, reviewed_at = now(), created_user_id = u_new
+   WHERE id = reg1;
+  PERFORM pg_temp.chk('District Admin final approval with created user accepted', true);
+  PERFORM pg_temp.ef('finalized request is immutable',
+    ARRAY[format('UPDATE tbl_user_registration_requests SET status=%L WHERE id=%L', 'REJECTED', reg1)],
+    'A finalized registration request is immutable');
   PERFORM pg_temp.ef('finalized reviewer cannot be changed',
-    ARRAY[format('UPDATE tbl_user_registration_requests SET reviewed_by=%L WHERE id=%L', u_super, reg1)], 'Reviewer, review time, and facility are immutable');
+    ARRAY[format('UPDATE tbl_user_registration_requests SET reviewed_by=%L WHERE id=%L', u_super, reg1)],
+    'A finalized registration request is immutable');
   PERFORM pg_temp.ef('finalized review timestamp cannot be changed',
-    ARRAY[format('UPDATE tbl_user_registration_requests SET reviewed_at=now() + interval %L WHERE id=%L', '1 day', reg1)], 'Reviewer, review time, and facility are immutable');
+    ARRAY[format('UPDATE tbl_user_registration_requests SET reviewed_at=now() + interval %L WHERE id=%L', '1 day', reg1)],
+    'A finalized registration request is immutable');
   PERFORM pg_temp.ef('finalized facility cannot be changed',
-    ARRAY[format('UPDATE tbl_user_registration_requests SET facility_id=%s WHERE id=%L', f_hosp, reg1)], 'Reviewer, review time, and facility are immutable');
+    ARRAY[format('UPDATE tbl_user_registration_requests SET facility_id=%s WHERE id=%L', f_hosp, reg1)],
+    'A finalized registration request is immutable');
 
   step := 'facilities and assignments';
   PERFORM pg_temp.ef('second active primary facility blocked',
@@ -121,16 +191,21 @@ BEGIN
     ARRAY[format('INSERT INTO mst_facilities (district_id,facility_type,code,name_en) VALUES (%s,%L,%L,%L)', dist, 'PHC', 'ZZ_BAD', 'bad')], 'ck_facility_parent');
 
   step := 'patient registration';
+  -- Migration 017: HW patient inserts require village + active Mandal assignment.
+  INSERT INTO tbl_health_worker_location_assignments
+    (user_id, district_id, mandal_id, village_id, facility_id, assigned_by)
+  VALUES (u_hw, dist, mandal2, v1, f_phc, u_da);
   PERFORM pg_temp.ef('system admin cannot register a patient',
     ARRAY[format('INSERT INTO tbl_patients (full_name,age_years,registered_facility_id,registered_by) VALUES (%L,40,%s,%L)', 'x', f_phc, u_sa)], 'registered_by must be a user with role');
   PERFORM pg_temp.ef('real (non-synthetic) patient data blocked',
-    ARRAY[format('INSERT INTO tbl_patients (full_name,age_years,registered_facility_id,registered_by,is_synthetic) VALUES (%L,40,%s,%L,false)', 'x', f_phc, u_hw)], 'is_synthetic|check constraint');
+    ARRAY[format('INSERT INTO tbl_patients (full_name,age_years,village_id,registered_facility_id,registered_by,is_synthetic) VALUES (%L,40,%s,%s,%L,false)', 'x', v1, f_phc, u_hw)], 'is_synthetic|check constraint');
   PERFORM pg_temp.ef('patient without age or DOB blocked',
-    ARRAY[format('INSERT INTO tbl_patients (full_name,registered_facility_id,registered_by) VALUES (%L,%s,%L)', 'x', f_phc, u_hw)], 'ck_patient_age_known');
+    ARRAY[format('INSERT INTO tbl_patients (full_name,village_id,registered_facility_id,registered_by) VALUES (%L,%s,%s,%L)', 'x', v1, f_phc, u_hw)], 'ck_patient_age_known');
   INSERT INTO tbl_patients (full_name, sex, age_years, village_id, phc_id, preferred_language_id, registered_facility_id, registered_by)
   VALUES ('Test Patient One', 'FEMALE', 45, v1, phc, lang_te, f_phc, u_hw) RETURNING id, patient_code INTO p1, gen_code;
   PERFORM pg_temp.chk('health worker registers patient, code generated', gen_code LIKE 'AD-____-______', gen_code);
-  INSERT INTO tbl_patients (full_name, age_years, registered_facility_id, registered_by) VALUES ('Test Patient Two', 50, f_phc, u_hw) RETURNING id INTO p2;
+  INSERT INTO tbl_patients (full_name, age_years, village_id, registered_facility_id, registered_by)
+  VALUES ('Test Patient Two', 50, v1, f_phc, u_hw) RETURNING id INTO p2;
 
   step := 'screening + consent';
   INSERT INTO tbl_screenings (patient_id, examiner_id, facility_id) VALUES (p1, u_hw, f_phc) RETURNING id INTO s1;

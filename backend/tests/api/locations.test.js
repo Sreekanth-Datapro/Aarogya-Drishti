@@ -43,9 +43,15 @@ let asrId;
 beforeAll(async () => {
   await resetTransactionalData();
   await createUser({ username: "loc_super", role: "SUPER_ADMIN" });
-  await createUser({ username: "loc_sysadmin", role: "SYSTEM_ADMIN" });
-  token = await signInWithMfa("loc_super");
   asrId = await idOf("SELECT id FROM mst_districts WHERE code = 'ASR'");
+  // SYSTEM_ADMIN cannot log in after migration 011. Use an active non-super role
+  // that authenticates but must receive 403 on location import.
+  await createUser({
+    username: "loc_district",
+    role: "DISTRICT_ADMIN",
+    districtId: asrId,
+  });
+  token = await signInWithMfa("loc_super");
 });
 
 beforeEach(() => {
@@ -58,8 +64,14 @@ const post = (url, body) => request(app).post(url).set(bearer(token)).send(body)
 
 describe("access", () => {
   test("only SUPER_ADMIN may use the location import", async () => {
-    const sysToken = await signInWithMfa("loc_sysadmin");
-    const res = await request(app).get("/api/locations/preview?level=district&state_code=28").set(bearer(sysToken));
+    // Helper throws if MFA enrolment fails, so a 401 here is authorization noise not a missing token.
+    const districtToken = await signInWithMfa("loc_district");
+    expect(typeof districtToken).toBe("string");
+    expect(districtToken.length).toBeGreaterThan(0);
+
+    const res = await request(app)
+      .get("/api/locations/preview?level=district&state_code=28")
+      .set(bearer(districtToken));
     expect(res.status).toBe(403);
 
     const anonymous = await request(app).get("/api/locations/preview?level=district&state_code=28");

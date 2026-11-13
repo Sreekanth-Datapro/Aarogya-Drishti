@@ -104,10 +104,12 @@ function assertDestructiveResetOptIn(env = process.env) {
 }
 
 async function assertConnectedToTestDatabase(queryable, config = getTestDatabaseConfig()) {
+  // Use host(inet_server_addr()) so values like 127.0.0.1/32 normalize to 127.0.0.1.
+  // Do not compare inet_server_addr()::text directly.
   const result = await queryable.query(
     `SELECT current_database() AS name,
             current_user AS user,
-            inet_server_addr()::text AS server_address,
+            host(inet_server_addr()) AS server_address,
             inet_server_port() AS server_port,
             NOT EXISTS (
               SELECT 1
@@ -129,6 +131,7 @@ async function assertConnectedToTestDatabase(queryable, config = getTestDatabase
     !identity ||
     identity.name !== config.databaseName ||
     identity.user !== config.user ||
+    !identity.server_address ||
     identity.server_address !== config.serverAddress ||
     Number(identity.server_port) !== config.port ||
     identity.restricted_database_access !== true ||

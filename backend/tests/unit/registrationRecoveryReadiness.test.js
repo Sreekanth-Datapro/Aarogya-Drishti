@@ -55,11 +55,13 @@ test("migration numbering has no active history edits or proposed numeric collis
   expect(active.filter((name) => name.startsWith("015_"))).toEqual(["015_two_stage_registration.sql"]);
   expect(fs.readFileSync(path.join(activeMigrationsPath, "015_two_stage_registration.sql"), "utf8")).toBe(workflowProposal);
   expect(new Set(proposedPrefixes).size).toBe(proposedPrefixes.length);
+  // Proposed folder currently holds 014–017 plus 019 (not yet promoted to migrations/).
   expect(proposed).toEqual([
     "014_district_admin_staff_permission.sql",
     "015_two_stage_registration.sql",
     "016_user_specialties.sql",
     "017_health_worker_mandal_registration.sql",
+    "019_prevent_repeated_active_screenings.sql",
   ]);
   expect(fs.existsSync(path.join(proposedMigrationsPath, "superseded_two_stage_registration_v1.sql"))).toBe(true);
 });

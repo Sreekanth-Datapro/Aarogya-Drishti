@@ -27,11 +27,6 @@ const post = (body, token = admin) => request(app).post("/api/facilities").set(b
 
 beforeAll(async () => {
   await resetTransactionalData();
-  await createUser({ username: "fac_super", role: "SUPER_ADMIN" });
-  await createUser({ username: "fac_sysadmin", role: "SYSTEM_ADMIN" });
-  await createUser({ username: "fac_district", role: "DISTRICT_ADMIN" });
-  await createUser({ username: "fac_hw", role: "HEALTH_WORKER" });
-  admin = await signInWithMfa("fac_super");
 
   ids = {
     district: Number((await one("SELECT id FROM mst_districts WHERE code = 'ASR'")).id),
@@ -39,6 +34,19 @@ beforeAll(async () => {
     mandalPaderu: Number((await one("SELECT id FROM mst_mandals WHERE code = 'PADERU'")).id),
     village1: Number((await one("SELECT id FROM mst_villages WHERE code = 'VIL_DEMO_1'")).id),
   };
+
+  await createUser({ username: "fac_super", role: "SUPER_ADMIN" });
+  // SYSTEM_ADMIN cannot log in after migration 011 (role inactive). A second
+  // SUPER_ADMIN still exercises master.manage facility creation.
+  await createUser({ username: "fac_sysadmin", role: "SUPER_ADMIN" });
+  // District Admins must be assigned a district or facility APIs return DISTRICT_NOT_ASSIGNED.
+  await createUser({
+    username: "fac_district",
+    role: "DISTRICT_ADMIN",
+    districtId: ids.district,
+  });
+  await createUser({ username: "fac_hw", role: "HEALTH_WORKER" });
+  admin = await signInWithMfa("fac_super");
 
   // A second district with its own mandal, to test mismatched locations
   const district = await one("INSERT INTO mst_districts (code, name_en) VALUES ('MAN_D_FACTEST', 'Other District') RETURNING id");
@@ -84,7 +92,7 @@ describe("role-based access", () => {
     expect((await post(validBody(), token)).status).toBe(403);
   });
 
-  test("system admins can manage facilities (master.manage)", async () => {
+  test("accounts with master.manage can create facilities", async () => {
     const token = await signInWithMfa("fac_sysadmin");
     const res = await post(validBody({ name_en: "Sub-centre by system admin", category: "SUB_CENTRE" }), token);
     expect(res.status).toBe(201);

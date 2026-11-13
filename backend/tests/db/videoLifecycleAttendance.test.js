@@ -49,12 +49,27 @@ describe("video lifecycle attendance (disposable PostgreSQL)", () => {
         SELECT 'zz_vl_lock_hw', 'x', 'VL Lock HW', id FROM mst_roles WHERE code = 'HEALTH_WORKER'
         RETURNING id
       ),
-      fac AS (
-        SELECT id AS facility_id FROM mst_facilities WHERE code = 'FAC_PHC_GM'
+      assigner AS (
+        INSERT INTO tbl_users (username, password_hash, full_name, role_id)
+        SELECT 'zz_vl_lock_mo', 'x', 'VL Lock MO', id FROM mst_roles WHERE code = 'MEDICAL_OFFICER'
+        RETURNING id
+      ),
+      loc AS (
+        SELECT f.id AS facility_id, f.district_id, f.mandal_id, v.id AS village_id
+          FROM mst_facilities f
+          JOIN mst_villages v ON v.code = 'VIL_DEMO_1' AND v.mandal_id = f.mandal_id
+         WHERE f.code = 'FAC_PHC_GM'
+      ),
+      hw_assign AS (
+        INSERT INTO tbl_health_worker_location_assignments
+          (user_id, district_id, mandal_id, village_id, facility_id, assigned_by)
+        SELECT hw.id, loc.district_id, loc.mandal_id, loc.village_id, loc.facility_id, assigner.id
+          FROM hw, assigner, loc
+        RETURNING user_id
       )
-      INSERT INTO tbl_patients (full_name, age_years, registered_facility_id, registered_by)
-      SELECT 'VL Lock Patient', 35, fac.facility_id, hw.id
-        FROM hw, fac
+      INSERT INTO tbl_patients (full_name, age_years, village_id, registered_facility_id, registered_by)
+      SELECT 'VL Lock Patient', 35, loc.village_id, loc.facility_id, hw.id
+        FROM hw, loc, hw_assign
       RETURNING id
     `);
     const patientId = seed.rows[0].id;

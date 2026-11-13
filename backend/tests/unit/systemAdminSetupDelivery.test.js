@@ -20,8 +20,11 @@ jest.mock("bcryptjs", () => ({
     return label;
   }),
 }));
+// jest.config.js maps config/config → unitConfig; mock that module for a stable login URL.
 jest.mock("../helpers/unitConfig", () => ({
-  frontendUrl: "https://frontend.example.test/",
+  frontendUrl: "https://frontend.example.test",
+  getSetupTokenEncryptionKey: () => Buffer.alloc(32, 1),
+  getMfaEncryptionKey: () => Buffer.alloc(32, 7),
 }));
 jest.mock("../../services/emailTransport", () => ({
   sendSetupEmail: jest.fn(),

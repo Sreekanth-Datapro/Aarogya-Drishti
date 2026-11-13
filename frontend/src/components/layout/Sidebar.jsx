@@ -61,37 +61,17 @@ export default function Sidebar({ user, open, onClose, onLogout, pendingCount = 
       className={`admin-sidebar ${open ? "open" : ""} ${collapsed ? "collapsed" : ""}`}
       aria-label={t("nav.menu")}
     >
-      {/* Sidebar Header with Hands + Heart Healthcare Logo */}
+      {/* Sidebar Header — Aarogya Drishti app icon */}
       <div className="sidebar-brand-header">
         <div className="sidebar-brand-logo-wrap">
-          <svg
-            viewBox="0 0 64 64"
-            className="sidebar-brand-svg"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            {/* Heart Shape */}
-            <path
-              d="M32 52 C32 52 14 38 14 24 C14 17.5 19.5 12 26 12 C29.5 12 32 14 32 14 C32 14 34.5 12 38 12 C44.5 12 50 17.5 50 24 C50 38 32 52 32 52 Z"
-              fill="#10b981"
-            />
-            {/* Medical Cross inside heart */}
-            <rect x="29.5" y="19" width="5" height="15" rx="1.5" fill="#ffffff" />
-            <rect x="24.5" y="24" width="15" height="5" rx="1.5" fill="#ffffff" />
-            {/* Caring Hands below */}
-            <path
-              d="M10 44 C12 37 18 34 23 37 C26 39 27 43 27 43"
-              stroke="#ffffff"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-            />
-            <path
-              d="M54 44 C52 37 46 34 41 37 C38 39 37 43 37 43"
-              stroke="#ffffff"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-            />
-          </svg>
+          <img
+            className="sidebar-brand-icon"
+            src={`${process.env.PUBLIC_URL || ""}/icons/icon-512.png`}
+            alt=""
+            width={48}
+            height={48}
+            decoding="async"
+          />
         </div>
 
         <div className="sidebar-brand-text">

@@ -53,6 +53,14 @@ BEGIN
   INSERT INTO tbl_user_facility_assignments (user_id, facility_id, is_primary)
   VALUES (u_mo, f_phc, true);
 
+  -- Migration 017: HW may register only when assigned to the patient's Mandal
+  -- with an active village/facility in that Mandal.
+  INSERT INTO tbl_health_worker_location_assignments
+    (user_id, district_id, mandal_id, village_id, facility_id, assigned_by)
+  SELECT u_hw, f.district_id, f.mandal_id, v1, f_phc, u_mo
+    FROM mst_facilities f
+   WHERE f.id = f_phc;
+
   INSERT INTO tbl_patients (full_name, sex, age_years, village_id, phc_id, preferred_language_id, registered_facility_id, registered_by)
   VALUES ('VL Lifecycle Patient', 'FEMALE', 40, v1, phc, lang_te, f_phc, u_hw) RETURNING id INTO p1;
 

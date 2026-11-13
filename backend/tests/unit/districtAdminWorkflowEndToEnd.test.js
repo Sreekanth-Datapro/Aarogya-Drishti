@@ -208,6 +208,16 @@ jest.mock("../../db", () => ({
   query: async (...args) => mockQuery(...args),
   connect: async () => ({ query: async (...args) => mockQuery(...args), release: () => {} }),
 }));
+// authController requires config/config. Inline factories (jest.mock is hoisted).
+jest.mock("../../config/config", () => ({
+  jwtSecret: "end-to-end-test-secret-with-more-than-32-bytes",
+  jwtExpiresIn: "15m",
+  mfaTokenTtl: "5m",
+  refreshTokenTtlHours: 12,
+  isProduction: false,
+  frontendUrl: "https://aarogya.example.test",
+  getMfaEncryptionKey: () => Buffer.alloc(32, 7),
+}));
 jest.mock("../helpers/unitConfig", () => ({
   jwtSecret: "end-to-end-test-secret-with-more-than-32-bytes",
   jwtExpiresIn: "15m",

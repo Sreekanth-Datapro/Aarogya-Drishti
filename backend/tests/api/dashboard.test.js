@@ -8,11 +8,16 @@ let districtBId;
 let facilityAId;
 let facilityBId;
 
+// Seed uses 4 demo facilities + 2 TEST_FACILITY_* rows created below.
+const EXPECTED_TOTAL_FACILITIES = 6;
+
 beforeAll(async () => {
   await resetTransactionalData();
   await createUser({ username: "dash_hw", role: "HEALTH_WORKER" });
-  await createUser({ username: "dash_admin", role: "SYSTEM_ADMIN" });
-  await createUser({ username: "dash_admin2", role: "SYSTEM_ADMIN" });
+  // Migration 011 retires SYSTEM_ADMIN (is_active=false); login requires an active role.
+  // Platform admin dashboard coverage uses SUPER_ADMIN (unified admin).
+  await createUser({ username: "dash_admin", role: "SUPER_ADMIN" });
+  await createUser({ username: "dash_admin2", role: "SUPER_ADMIN" });
 
   const districtA = await pool.query(
     `INSERT INTO mst_districts (code, name_en, name_te)
@@ -98,6 +103,11 @@ beforeAll(async () => {
   }
 });
 
+afterAll(async () => {
+  // Clear registration_requests and other tbl_* before setupAfterEnv location cleanup.
+  await resetTransactionalData();
+});
+
 describe("GET /api/dashboard/summary", () => {
   test("requires sign-in", async () => {
     const res = await request(app).get("/api/dashboard/summary");
@@ -129,7 +139,16 @@ describe("GET /api/dashboard/summary", () => {
     const token = await signInWithMfa("dash_admin2");
     const res = await request(app).get("/api/dashboard/summary").set(bearer(token));
 
-    expect(res.body.facilities).toEqual({ total: 6, active: 6, phc: 1, chc: 0, hospital: 2, other: 3 });
+    expect(res.status).toBe(200);
+    // 4 demo seed facilities + TEST_FACILITY_A/B from beforeAll.
+    expect(res.body.facilities).toEqual({
+      total: EXPECTED_TOTAL_FACILITIES,
+      active: EXPECTED_TOTAL_FACILITIES,
+      phc: 1,
+      chc: 0,
+      hospital: 2,
+      other: 3,
+    });
     expect(res.body.patients_registered).toBe(0);
 
     // The admin's own sign-in is the newest event; only event/outcome/time are returned
@@ -210,8 +229,8 @@ describe("GET /api/dashboard/summary", () => {
     const res = await request(app).get("/api/dashboard/summary").set(bearer(token));
 
     expect(res.status).toBe(200);
-    expect(res.body.facilities.total).toBe(6);
-    expect(res.body.masters.facilities).toBe(6);
+    expect(res.body.facilities.total).toBe(EXPECTED_TOTAL_FACILITIES);
+    expect(res.body.masters.facilities).toBe(EXPECTED_TOTAL_FACILITIES);
     expect(res.body.pending_registrations).toBe(2);
     expect(res.body.district_info.length).toBeGreaterThanOrEqual(2);
   });

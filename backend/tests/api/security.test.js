@@ -460,7 +460,10 @@ describe("database rules after migration 015", () => {
 
   test("SUPER_ADMIN has no patient-level access", async () => {
     const { rows } = await pool.query("SELECT prosrc FROM pg_proc WHERE proname = 'fn_user_has_patient_access'");
-    expect(rows[0].prosrc).toMatch(/'DISTRICT_ADMIN','SYSTEM_ADMIN','SUPER_ADMIN'/);
+    // Formatting may include spaces after commas; still require all three roles denied.
+    expect(rows[0].prosrc).toMatch(
+      /'DISTRICT_ADMIN'\s*,\s*'SYSTEM_ADMIN'\s*,\s*'SUPER_ADMIN'/
+    );
   });
 
   test("003 promotes the bootstrap SYSTEM_ADMIN in place and audits it", async () => {

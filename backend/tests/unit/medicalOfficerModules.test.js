@@ -778,7 +778,8 @@ describe("referrals and follow-ups", () => {
       const reviewQuery = mockQueries.find((query) => query.sql.includes("LEFT JOIN tbl_clinical_reviews cr"));
       expect(reviewQuery.sql).toContain("cr.screening_id = s.id AND cr.patient_id = s.patient_id");
       expect(reviewQuery.sql).toContain("FOR UPDATE OF s");
-      expect(reviewQuery.sql).toContain("existing.status <> 'CANCELLED'");
+      // Open referrals only (PLANNED/SENT/ACCEPTED); matches referralService.js.
+      expect(reviewQuery.sql).toContain("existing.status IN ('PLANNED', 'SENT', 'ACCEPTED')");
       expect(mockQueries.some((query) => query.sql.includes("FOR UPDATE OF c"))).toBe(true);
       expect(mockQueries.some((query) => query.sql.includes("UPDATE tbl_clinical_reviews"))).toBe(false);
     }
@@ -839,7 +840,7 @@ describe("referrals and follow-ups", () => {
     await expect(referralService.createReferral("mo-1", req, PATIENT, referralInput))
       .resolves.toMatchObject({ id: REFERRAL });
     const referralCheck = mockQueries.find((query) => query.sql.includes("FROM tbl_referrals existing"));
-    expect(referralCheck.sql).toContain("existing.status <> 'CANCELLED'");
+    expect(referralCheck.sql).toContain("existing.status IN ('PLANNED', 'SENT', 'ACCEPTED')");
   });
 
   test("missing screening consent blocks referral creation", async () => {

@@ -25,6 +25,7 @@ jest.mock("../../services/privateImageStorage", () => ({
   downloadBuffer: (...args) => mockDownloadBuffer(...args),
 }));
 
+// jest.config.js maps config/config → unitConfig, so mutations here affect the service.
 const config = require("../helpers/unitConfig");
 const { analyzeScreening } = require("../../services/aiAnalysisService");
 

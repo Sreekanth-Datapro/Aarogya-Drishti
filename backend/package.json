@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "test": "jest --config jest.config.js --runInBand",
+    "test:preflight-integration": "node scripts/preflightIntegrationDb.js",
     "migrate": "node scripts/migrate.js",
     "migrate:apply": "node scripts/migrate.js --apply",
     "verify:ai": "node scripts/verify-real-esrgan.js"

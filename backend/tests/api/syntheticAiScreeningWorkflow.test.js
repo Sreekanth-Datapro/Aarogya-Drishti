@@ -165,6 +165,14 @@ beforeEach(() => {
     if (sql.includes("FROM tbl_ai_assessments")) return { rows: savedAssessments };
     if (sql.includes("FROM tbl_clinical_reviews")) return { rows: [] };
     if (sql.includes("FROM vw_patient_timeline")) return { rows: [] };
+    if (sql.includes("FROM tbl_audit_logs") && sql.includes("PHOTO_UPLOADED")) {
+      return {
+        rows: photoRows.map((photo) => ({
+          photo_id: photo.id,
+          image_category: "MOUTH",
+        })),
+      };
+    }
     throw new Error(`Unexpected synthetic workflow pool query: ${sql}`);
   });
 

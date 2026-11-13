@@ -11,10 +11,9 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  // Location import tests change master data; put it back before the next test file
-  try {
-    await resetLocationMasters();
-  } finally {
-    await pool.end();
-  }
+  // Location / facility fixtures mutate master data; restore demo seed before the
+  // next file. Do NOT pool.end() here: jest.integration.config uses maxWorkers:1
+  // and a shared db.js Pool — ending after the first file breaks every later suite.
+  // Connections are released when the Jest worker process exits (forceExit).
+  await resetLocationMasters();
 });

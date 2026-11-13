@@ -15,6 +15,8 @@ const APPROVE_003_ENV_VALUE = "PROMOTE_BOOTSTRAP";
 // generated name; set MIGRATION_TRUSTED_DATABASE_NAME to that exact name.
 const DEFAULT_PRODUCTION_DATABASE = "Aarogya";
 const TEST_DATABASE = "aarogya_test";
+// Fixed allowlisted username for Jest integration harness only (never production).
+const INTEGRATION_TEST_BOOTSTRAP_USERNAME = "zz_test_bootstrap_admin";
 
 /**
  * Exact database name allowed for the 003 production verification path.
@@ -391,17 +393,15 @@ async function resolveKnownBootstrapPromotionChecksum(
 }
 
 /**
- * Explicitly approved execution of 003. Dual approval is required by the caller.
- * Never records history unless SUPER_ADMIN + matching audit evidence exist afterward.
+ * Shared pre-checks and execution for 003 (promote + verify). Caller must gate
+ * the database identity. History INSERT stays in the migrator transaction.
  */
-async function executeApprovedBootstrapPromotion(client, migration, context, log) {
+async function executeBootstrapPromotionBody(client, migration, context, log, modeLabel) {
   if (migration.checksum !== CURRENT_BOOTSTRAP_PROMOTION_CHECKSUM) {
     throw new Error(
       "003 checksum mismatch is not the reviewed local source; refusing to continue."
     );
   }
-
-  await assertTrustedDatabaseFor003(client, context);
 
   const bootstrapUsername = context.bootstrapUsername;
   if (typeof bootstrapUsername !== "string" || !bootstrapUsername.trim()) {
@@ -462,8 +462,69 @@ async function executeApprovedBootstrapPromotion(client, migration, context, log
   await mod.up(client, { ...context, log });
   await verifyBootstrapPromotionOutcome(client, bootstrapUsername);
 
-  log(
-    `  applied   ${migration.file} (approved bootstrap promotion verified)`
+  log(`  applied   ${migration.file} (${modeLabel})`);
+}
+
+/**
+ * Explicitly approved execution of 003. Dual approval is required by the caller.
+ * Never records history unless SUPER_ADMIN + matching audit evidence exist afterward.
+ */
+async function executeApprovedBootstrapPromotion(client, migration, context, log) {
+  await assertTrustedDatabaseFor003(client, context);
+  await executeBootstrapPromotionBody(
+    client,
+    migration,
+    context,
+    log,
+    "approved bootstrap promotion verified"
+  );
+}
+
+/**
+ * Jest-only harness: execute and verify 003 on aarogya_test.
+ * Does not use dual-approve or trusted production names.
+ * assertTrustedDatabaseFor003 is intentionally not called (and still refuses aarogya_test).
+ */
+async function assertIsolatedTestDatabaseFor003(client, env = process.env) {
+  if (String(env.NODE_ENV || "").trim() !== "test") {
+    throw new Error("Isolated-test 003 harness requires NODE_ENV=test.");
+  }
+  if (env.TEST_DB_ALLOW_DESTRUCTIVE_RESET !== "true") {
+    throw new Error(
+      "Isolated-test 003 harness requires TEST_DB_ALLOW_DESTRUCTIVE_RESET=true."
+    );
+  }
+
+  const databaseResult = await client.query("SELECT current_database() AS name");
+  const databaseName = databaseResult.rows[0]?.name;
+  if (databaseName !== TEST_DATABASE) {
+    throw new Error(
+      `Isolated-test 003 harness is not allowed for database "${databaseName || "unknown"}"; ` +
+        `only ${TEST_DATABASE} is permitted.`
+    );
+  }
+  return databaseName;
+}
+
+async function executeIsolatedTestBootstrapPromotion(client, migration, context, log) {
+  const env = context.env || process.env;
+  await assertIsolatedTestDatabaseFor003(client, env);
+
+  const bootstrapUsername = String(context.bootstrapUsername || "").trim();
+  if (
+    bootstrapUsername.toLowerCase() !== INTEGRATION_TEST_BOOTSTRAP_USERNAME.toLowerCase()
+  ) {
+    throw new Error(
+      `Isolated-test 003 harness requires bootstrap username "${INTEGRATION_TEST_BOOTSTRAP_USERNAME}".`
+    );
+  }
+
+  await executeBootstrapPromotionBody(
+    client,
+    migration,
+    context,
+    log,
+    "isolated-test harness bootstrap promotion verified; not dual-approve"
   );
 }
 
@@ -473,6 +534,7 @@ async function runMigrations(
     apply = false,
     defer003 = false,
     approve003PromoteBootstrap = false,
+    apply003ForIsolatedTestDatabase = false,
     context = {},
     log = console.log,
   } = {}
@@ -507,12 +569,23 @@ async function runMigrations(
     );
 
     let pending = allPending;
+    const isolatedTest003 = apply003ForIsolatedTestDatabase === true;
 
     if (pending003 && apply) {
+      if (isolatedTest003 && (dualApproved || defer003)) {
+        throw new Error(
+          "Isolated-test 003 harness cannot be combined with dual approval or --defer-003."
+        );
+      }
       if (dualApproved) {
         // Keep full ordered pending list: 001/002, then 003, then 004+.
         log(
           "  approval  003_promote_bootstrap_admin.js dual approval accepted (CLI + MIGRATE_APPROVE_003)"
+        );
+      } else if (isolatedTest003) {
+        // Jest aarogya_test only: execute 003 (not skip) then 004+.
+        log(
+          "  harness   003_promote_bootstrap_admin.js isolated-test path (execute + verify; not dual-approve)"
         );
       } else if (defer003) {
         // Phase 1: only migrations strictly before 003 (001, 002). Never 003 or 004+.
@@ -558,7 +631,16 @@ async function runMigrations(
 
       try {
         if (migration.file === BOOTSTRAP_PROMOTION_MIGRATION) {
-          await executeApprovedBootstrapPromotion(client, migration, context, log);
+          if (isolatedTest003) {
+            await executeIsolatedTestBootstrapPromotion(
+              client,
+              migration,
+              context,
+              log
+            );
+          } else {
+            await executeApprovedBootstrapPromotion(client, migration, context, log);
+          }
         } else if (migration.file.endsWith(".sql")) {
           const sql = stripTransactionControl(fs.readFileSync(fullPath, "utf8"));
           await client.query(sql);
@@ -584,13 +666,15 @@ async function runMigrations(
         file: migration.file,
         action:
           migration.file === BOOTSTRAP_PROMOTION_MIGRATION
-            ? "applied-approved-003"
+            ? isolatedTest003
+              ? "applied-isolated-test-003"
+              : "applied-approved-003"
             : "applied",
       });
     }
 
     // Phase 1 reporting: 003 stays pending; anything after 003 is held back.
-    if (apply && defer003 && pending003 && !dualApproved) {
+    if (apply && defer003 && pending003 && !dualApproved && !isolatedTest003) {
       results.push({ file: BOOTSTRAP_PROMOTION_MIGRATION, action: "deferred" });
       for (const migration of allPending) {
         if (isAfterBootstrapPromotion(migration.file)) {
@@ -615,10 +699,12 @@ module.exports = {
   resolveKnownBootstrapPromotionChecksum,
   isBeforeBootstrapPromotion,
   isAfterBootstrapPromotion,
+  assertIsolatedTestDatabaseFor003,
   DEFAULT_PRODUCTION_DATABASE,
   BOOTSTRAP_PROMOTION_MIGRATION,
   ORIGINAL_BOOTSTRAP_PROMOTION_CHECKSUM,
   CURRENT_BOOTSTRAP_PROMOTION_CHECKSUM,
   APPROVE_003_ENV_VALUE,
   TEST_DATABASE,
+  INTEGRATION_TEST_BOOTSTRAP_USERNAME,
 };

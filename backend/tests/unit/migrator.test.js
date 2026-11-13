@@ -12,11 +12,14 @@ const {
   is003DualApproved,
   summarizeMigrationStatusForBootstrap,
   resolveKnownBootstrapPromotionChecksum,
+  assertIsolatedTestDatabaseFor003,
   DEFAULT_PRODUCTION_DATABASE,
   BOOTSTRAP_PROMOTION_MIGRATION,
   ORIGINAL_BOOTSTRAP_PROMOTION_CHECKSUM,
   CURRENT_BOOTSTRAP_PROMOTION_CHECKSUM,
   APPROVE_003_ENV_VALUE,
+  INTEGRATION_TEST_BOOTSTRAP_USERNAME,
+  TEST_DATABASE,
 } = require("../../utils/migrator");
 
 const MIGRATIONS_DIR = path.join(__dirname, "..", "..", "migrations");
@@ -899,5 +902,304 @@ describe("runMigrations safeguards", () => {
         log: () => {},
       })
     ).rejects.toThrow(/003 recorded checksum does not match the known original/);
+  });
+
+  describe("isolated-test 003 harness", () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    const previousDestructive = process.env.TEST_DB_ALLOW_DESTRUCTIVE_RESET;
+
+    beforeEach(() => {
+      process.env.NODE_ENV = "test";
+      process.env.TEST_DB_ALLOW_DESTRUCTIVE_RESET = "true";
+      delete process.env.MIGRATE_APPROVE_003;
+    });
+
+    afterEach(() => {
+      if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = previousNodeEnv;
+      if (previousDestructive === undefined) {
+        delete process.env.TEST_DB_ALLOW_DESTRUCTIVE_RESET;
+      } else {
+        process.env.TEST_DB_ALLOW_DESTRUCTIVE_RESET = previousDestructive;
+      }
+    });
+
+    function pending003Rows() {
+      return appliedRows().filter((r) => r.filename !== BOOTSTRAP_PROMOTION_MIGRATION);
+    }
+
+    test("executes and records 003 on aarogya_test without dual-approve", async () => {
+      const logs = [];
+      const client = createMockClient({
+        databaseName: TEST_DATABASE,
+        rowsByFilename: pending003Rows(),
+        bootstrapAccount: { id: "u1", role_code: "SYSTEM_ADMIN" },
+        verificationRows: "dynamic",
+        promoteToSuperAdmin: true,
+      });
+
+      const results = await runMigrations(client, {
+        apply: true,
+        apply003ForIsolatedTestDatabase: true,
+        context: {
+          bootstrapUsername: INTEGRATION_TEST_BOOTSTRAP_USERNAME,
+          env: process.env,
+        },
+        log: (line) => logs.push(line),
+      });
+
+      expect(results.some((r) => r.action === "applied-isolated-test-003")).toBe(true);
+      expect(logs.some((line) => /isolated-test harness/i.test(line))).toBe(true);
+
+      const verifyIdx = client.queries.findIndex(
+        (q) => /ROLE_CHANGED/i.test(q.sql) && /SUPER_ADMIN/i.test(q.sql)
+      );
+      const history003Idx = client.queries.findIndex(
+        (q) =>
+          /INSERT INTO schema_migrations/i.test(q.sql) &&
+          q.params &&
+          q.params[0] === BOOTSTRAP_PROMOTION_MIGRATION
+      );
+      const commit003Idx = client.queries.findIndex(
+        (q, index) => index > history003Idx && /^COMMIT/i.test(q.sql.trim())
+      );
+      expect(verifyIdx).toBeGreaterThan(-1);
+      expect(history003Idx).toBeGreaterThan(verifyIdx);
+      expect(commit003Idx).toBeGreaterThan(history003Idx);
+    });
+
+    test("refuses Aarogya", async () => {
+      const client = createMockClient({
+        databaseName: "Aarogya",
+        rowsByFilename: pending003Rows(),
+        bootstrapAccount: { id: "u1", role_code: "SYSTEM_ADMIN" },
+      });
+
+      await expect(
+        runMigrations(client, {
+          apply: true,
+          apply003ForIsolatedTestDatabase: true,
+          context: {
+            bootstrapUsername: INTEGRATION_TEST_BOOTSTRAP_USERNAME,
+            env: process.env,
+          },
+          log: () => {},
+        })
+      ).rejects.toThrow(/only aarogya_test is permitted/);
+    });
+
+    test("refuses aarogya_defer003_test", async () => {
+      const client = createMockClient({
+        databaseName: "aarogya_defer003_test",
+        rowsByFilename: pending003Rows(),
+        bootstrapAccount: { id: "u1", role_code: "SYSTEM_ADMIN" },
+      });
+
+      await expect(
+        runMigrations(client, {
+          apply: true,
+          apply003ForIsolatedTestDatabase: true,
+          context: {
+            bootstrapUsername: INTEGRATION_TEST_BOOTSTRAP_USERNAME,
+            env: process.env,
+          },
+          log: () => {},
+        })
+      ).rejects.toThrow(/only aarogya_test is permitted/);
+    });
+
+    test("refuses Render-style database names", async () => {
+      const client = createMockClient({
+        databaseName: "aarogya_drishti_abc123",
+        rowsByFilename: pending003Rows(),
+        bootstrapAccount: { id: "u1", role_code: "SYSTEM_ADMIN" },
+      });
+
+      await expect(
+        runMigrations(client, {
+          apply: true,
+          apply003ForIsolatedTestDatabase: true,
+          context: {
+            bootstrapUsername: INTEGRATION_TEST_BOOTSTRAP_USERNAME,
+            env: process.env,
+          },
+          log: () => {},
+        })
+      ).rejects.toThrow(/only aarogya_test is permitted/);
+    });
+
+    test("refuses missing bootstrap account and does not mark applied", async () => {
+      const client = createMockClient({
+        databaseName: TEST_DATABASE,
+        rowsByFilename: pending003Rows(),
+        bootstrapAccount: null,
+      });
+
+      await expect(
+        runMigrations(client, {
+          apply: true,
+          apply003ForIsolatedTestDatabase: true,
+          context: {
+            bootstrapUsername: INTEGRATION_TEST_BOOTSTRAP_USERNAME,
+            env: process.env,
+          },
+          log: () => {},
+        })
+      ).rejects.toThrow(/bootstrap account does not exist; not marking applied/);
+
+      expect(
+        client.queries.some(
+          (q) =>
+            /INSERT INTO schema_migrations/i.test(q.sql) &&
+            q.params &&
+            q.params[0] === BOOTSTRAP_PROMOTION_MIGRATION
+        )
+      ).toBe(false);
+    });
+
+    test("refuses non-allowlisted bootstrap username", async () => {
+      const client = createMockClient({
+        databaseName: TEST_DATABASE,
+        rowsByFilename: pending003Rows(),
+        bootstrapAccount: { id: "u1", role_code: "SYSTEM_ADMIN" },
+      });
+
+      await expect(
+        runMigrations(client, {
+          apply: true,
+          apply003ForIsolatedTestDatabase: true,
+          context: {
+            bootstrapUsername: "production_admin",
+            env: process.env,
+          },
+          log: () => {},
+        })
+      ).rejects.toThrow(/requires bootstrap username/);
+    });
+
+    test("refuses when dual-approve flags are also set", async () => {
+      process.env.MIGRATE_APPROVE_003 = APPROVE_003_ENV_VALUE;
+      const client = createMockClient({
+        databaseName: TEST_DATABASE,
+        rowsByFilename: pending003Rows(),
+        bootstrapAccount: { id: "u1", role_code: "SYSTEM_ADMIN" },
+      });
+
+      await expect(
+        runMigrations(client, {
+          apply: true,
+          apply003ForIsolatedTestDatabase: true,
+          approve003PromoteBootstrap: true,
+          context: {
+            bootstrapUsername: INTEGRATION_TEST_BOOTSTRAP_USERNAME,
+            approve003PromoteBootstrap: true,
+            env: process.env,
+          },
+          log: () => {},
+        })
+      ).rejects.toThrow(/cannot be combined with dual approval/);
+    });
+
+    test("refuses when combined with defer-003", async () => {
+      const client = createMockClient({
+        databaseName: TEST_DATABASE,
+        rowsByFilename: pending003Rows(),
+        bootstrapAccount: { id: "u1", role_code: "SYSTEM_ADMIN" },
+      });
+
+      await expect(
+        runMigrations(client, {
+          apply: true,
+          apply003ForIsolatedTestDatabase: true,
+          defer003: true,
+          context: {
+            bootstrapUsername: INTEGRATION_TEST_BOOTSTRAP_USERNAME,
+            env: process.env,
+          },
+          log: () => {},
+        })
+      ).rejects.toThrow(/cannot be combined with dual approval or --defer-003/);
+    });
+
+    test("refuses without NODE_ENV=test", async () => {
+      process.env.NODE_ENV = "development";
+      const client = createMockClient({
+        databaseName: TEST_DATABASE,
+        rowsByFilename: pending003Rows(),
+        bootstrapAccount: { id: "u1", role_code: "SYSTEM_ADMIN" },
+      });
+
+      await expect(
+        runMigrations(client, {
+          apply: true,
+          apply003ForIsolatedTestDatabase: true,
+          context: {
+            bootstrapUsername: INTEGRATION_TEST_BOOTSTRAP_USERNAME,
+            env: process.env,
+          },
+          log: () => {},
+        })
+      ).rejects.toThrow(/requires NODE_ENV=test/);
+    });
+
+    test("refuses without destructive reset opt-in", async () => {
+      process.env.TEST_DB_ALLOW_DESTRUCTIVE_RESET = "false";
+      const client = createMockClient({
+        databaseName: TEST_DATABASE,
+        rowsByFilename: pending003Rows(),
+        bootstrapAccount: { id: "u1", role_code: "SYSTEM_ADMIN" },
+      });
+
+      await expect(
+        runMigrations(client, {
+          apply: true,
+          apply003ForIsolatedTestDatabase: true,
+          context: {
+            bootstrapUsername: INTEGRATION_TEST_BOOTSTRAP_USERNAME,
+            env: process.env,
+          },
+          log: () => {},
+        })
+      ).rejects.toThrow(/TEST_DB_ALLOW_DESTRUCTIVE_RESET=true/);
+    });
+
+    test("plain apply without approval or harness still refuses pending 003", async () => {
+      const client = createMockClient({
+        databaseName: TEST_DATABASE,
+        rowsByFilename: pending003Rows(),
+      });
+
+      await expect(
+        runMigrations(client, { apply: true, log: () => {} })
+      ).rejects.toThrow(/not recorded as applied/);
+    });
+
+    test("assertIsolatedTestDatabaseFor003 rejects non-test databases", async () => {
+      const client = createMockClient({ databaseName: "Aarogya" });
+      await expect(
+        assertIsolatedTestDatabaseFor003(client, process.env)
+      ).rejects.toThrow(/only aarogya_test is permitted/);
+    });
+
+    test("dual-approve path still refuses aarogya_test", async () => {
+      process.env.MIGRATE_APPROVE_003 = APPROVE_003_ENV_VALUE;
+      const client = createMockClient({
+        databaseName: TEST_DATABASE,
+        rowsByFilename: pending003Rows(),
+        bootstrapAccount: { id: "u1", role_code: "SYSTEM_ADMIN" },
+      });
+
+      await expect(
+        runMigrations(client, {
+          apply: true,
+          approve003PromoteBootstrap: true,
+          context: {
+            bootstrapUsername: "bootstrap_admin",
+            approve003PromoteBootstrap: true,
+          },
+          log: () => {},
+        })
+      ).rejects.toThrow(/not allowed on aarogya_test/);
+    });
   });
 });

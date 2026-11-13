@@ -258,78 +258,59 @@ describe("Hospital Staff facility-scoped appointment workflow", () => {
     }));
   });
 
-  test("video consultation confirmation requires its own live Specialist reservation and records history", async () => {
-    const result = await service.confirmVideoConsultation(
+  test("legacy video consultation confirm is gated even for reserved REQUESTED rows", async () => {
+    await expect(service.confirmVideoConsultation(
       "staff-1", { user: { id: "staff-1" } }, VIDEO_CONSULTATION
-    );
-    expect(result).toMatchObject({ status_code: "CONFIRMED", slot_id: VIDEO_SLOT });
+    )).rejects.toMatchObject({
+      status: 409,
+      code: "VIDEO_AVAILABILITY_CONFIRMATION_REQUIRED",
+    });
     const lock = mockQueries.find(({ sql }) => sql.includes("FOR UPDATE OF vc, slot"));
-    expect(lock.sql).toContain("referral.assigned_specialist_id = vc.specialist_id");
-    expect(lock.sql).toContain("slot.is_booked IS TRUE");
-    expect(lock.sql).toContain("NOT EXISTS");
-    expect(mockQueries.some(({ sql }) => sql.includes("UPDATE tbl_video_consultations"))).toBe(true);
-    expect(mockQueries.some(({ sql }) => sql.includes("video_consultation_id"))).toBe(true);
-    expect(audit).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
-      event: "HOSPITAL_VIDEO_CONSULTATION_CONFIRMED",
-      resourceId: VIDEO_CONSULTATION,
-      patientId: PATIENT,
-    }));
+    expect(lock).toBeTruthy();
+    expect(lock.sql).toContain("facility.hospital_id = referral.to_hospital_id");
+    expect(mockQueries.some(({ sql }) => sql.includes("UPDATE tbl_video_consultations"))).toBe(false);
+    expect(mockQueries.some(({ sql }) => sql.includes("INSERT INTO tbl_appointment_status_history"))).toBe(false);
+    expect(audit).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ event: "HOSPITAL_VIDEO_CONSULTATION_CONFIRMED" })
+    );
+  });
+
+  test("legacy video confirm rejects out-of-scope consultations before the workflow gate", async () => {
+    mockHandler = defaultHandler({ "FOR UPDATE OF vc, slot": { rows: [] } });
+    await expect(service.confirmVideoConsultation("staff-1", {}, VIDEO_CONSULTATION))
+      .rejects.toMatchObject({ status: 404, code: "CONSULTATION_NOT_FOUND" });
+    expect(mockQueries.some(({ sql }) => sql.includes("UPDATE tbl_video_consultations"))).toBe(false);
   });
 
   test.each([
-    ["unavailable", { availability_status: "UNAVAILABLE", is_booked: false }],
-    ["already booked", { availability_status: "UNAVAILABLE", is_booked: true }],
-  ])("video confirmation rejects an %s requested slot", async (_label, overrides) => {
+    ["unavailable slot", { availability_status: "UNAVAILABLE", is_booked: false }],
+    ["already booked slot", { availability_status: "UNAVAILABLE", is_booked: true }],
+    ["withdrawn consent", {
+      teleconsult_consent_granted: false,
+      teleconsult_consent_status: "WITHDRAWN",
+    }],
+    ["inactive specialist", { specialist_active: false }],
+  ])("legacy video confirm never confirms from an %s REQUESTED row", async (_label, overrides) => {
     mockHandler = defaultHandler({
       "FOR UPDATE OF vc, slot": { rows: [videoConsultation(overrides)] },
     });
     await expect(service.confirmVideoConsultation(
       "staff-1", {}, VIDEO_CONSULTATION
-    )).rejects.toMatchObject({ status: 409, code: "CONSULTATION_SLOT_UNAVAILABLE" });
+    )).rejects.toMatchObject({
+      status: 409,
+      code: "VIDEO_AVAILABILITY_CONFIRMATION_REQUIRED",
+    });
     expect(mockQueries.some(({ sql }) => sql.includes("UPDATE tbl_video_consultations"))).toBe(false);
   });
 
-  test("video confirmation rejects withdrawn TELECONSULT consent", async () => {
-    mockHandler = defaultHandler({
-      "FOR UPDATE OF vc, slot": {
-        rows: [videoConsultation({
-          availability_status: "UNAVAILABLE",
-          teleconsult_consent_granted: false,
-          teleconsult_consent_status: "WITHDRAWN",
-        })],
-      },
-      "SELECT pc.granted": { rows: [{ granted: false }] },
-    });
-    await expect(service.confirmVideoConsultation(
-      "staff-1", {}, VIDEO_CONSULTATION
-    )).rejects.toMatchObject({ status: 403, code: "CONSENT_REQUIRED" });
-    expect(mockQueries.some(({ sql }) => sql.includes("UPDATE tbl_video_consultations"))).toBe(false);
-  });
-
-  test("video confirmation rejects a Specialist who is inactive or no longer assigned to the facility", async () => {
-    mockHandler = defaultHandler({
-      "FOR UPDATE OF vc, slot": {
-        rows: [videoConsultation({
-          specialist_active: false,
-          availability_status: "UNAVAILABLE",
-        })],
-      },
-    });
-    await expect(service.confirmVideoConsultation(
-      "staff-1", {}, VIDEO_CONSULTATION
-    )).rejects.toMatchObject({ status: 409, code: "VIDEO_SPECIALIST_UNAVAILABLE" });
-
-    mockHandler = defaultHandler({
-      "FOR UPDATE OF vc, slot": {
-        rows: [videoConsultation({
-          specialist_facility_assigned: false,
-          availability_status: "UNAVAILABLE",
-        })],
-      },
-    });
-    await expect(service.confirmVideoConsultation(
-      "staff-1", {}, VIDEO_CONSULTATION
-    )).rejects.toMatchObject({ status: 409, code: "VIDEO_SPECIALIST_UNAVAILABLE" });
+  test("authorized route still rejects legacy video confirm without mutating state", async () => {
+    const response = await call(
+      "post",
+      `/api/hospital-staff/video-consultations/${VIDEO_CONSULTATION}/confirm`
+    );
+    expect(response.status).toBe(409);
+    expect(response.body).toMatchObject({ code: "VIDEO_AVAILABILITY_CONFIRMATION_REQUIRED" });
     expect(mockQueries.some(({ sql }) => sql.includes("UPDATE tbl_video_consultations"))).toBe(false);
   });
 
@@ -371,30 +352,24 @@ describe("Hospital Staff facility-scoped appointment workflow", () => {
     expect(mockQueries.some(({ sql }) => sql.includes("UPDATE tbl_video_consultations"))).toBe(false);
   });
 
-  test("concurrent video confirmations serialize and only confirm once", async () => {
-    let status = "REQUESTED";
+  test("concurrent legacy video confirm attempts never mutate consultation state", async () => {
     let updateCount = 0;
     let lockTail = Promise.resolve();
     const releaseLocks = [];
-    mockHandler = async (sql, params) => {
+    mockHandler = async (sql) => {
       if (sql.includes("FOR UPDATE OF vc, slot")) {
         const previous = lockTail;
         let releaseLock;
         lockTail = new Promise((resolve) => { releaseLock = resolve; });
         await previous;
         releaseLocks.push(releaseLock);
-        return { rows: [videoConsultation({ status_code: status, status_id: status === "CONFIRMED" ? 2 : 1 })] };
-      }
-      if (sql.includes("SELECT pc.granted")) return { rows: [{ granted: true }] };
-      if (sql.includes("SELECT id FROM mst_appointment_statuses")) {
-        return { rows: [{ id: params[0] === "CONFIRMED" ? 2 : 3 }] };
+        return { rows: [videoConsultation()] };
       }
       if (sql.includes("UPDATE tbl_video_consultations")) {
         updateCount += 1;
-        status = "CONFIRMED";
         return { rows: [{ id: VIDEO_CONSULTATION, slot_id: VIDEO_SLOT, status_id: 2, attendance: "PENDING" }] };
       }
-      if (sql.includes("COMMIT")) {
+      if (sql.includes("COMMIT") || sql.includes("ROLLBACK")) {
         const release = releaseLocks.shift();
         if (release) release();
       }
@@ -405,10 +380,12 @@ describe("Hospital Staff facility-scoped appointment workflow", () => {
       service.confirmVideoConsultation("staff-1", {}, VIDEO_CONSULTATION),
     ]);
 
-    expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
-    expect(outcomes.filter((outcome) => outcome.status === "rejected")[0].reason)
-      .toMatchObject({ status: 409, code: "INVALID_APPOINTMENT_TRANSITION" });
-    expect(updateCount).toBe(1);
+    expect(outcomes.every((outcome) => outcome.status === "rejected")).toBe(true);
+    expect(outcomes.map((outcome) => outcome.reason)).toEqual([
+      expect.objectContaining({ status: 409, code: "VIDEO_AVAILABILITY_CONFIRMATION_REQUIRED" }),
+      expect.objectContaining({ status: 409, code: "VIDEO_AVAILABILITY_CONFIRMATION_REQUIRED" }),
+    ]);
+    expect(updateCount).toBe(0);
   });
 
   test("video consultation requests cannot be confirmed or completed through generic hospital actions", async () => {
@@ -433,6 +410,23 @@ describe("Hospital Staff facility-scoped appointment workflow", () => {
     const lock = mockQueries.find(({ sql }) => sql.includes("FOR UPDATE OF appointment"));
     expect(lock.sql).toContain("video.is_active IS TRUE");
     expect(lock.sql).toContain("referral.mode::text AS referral_mode");
+    expect(lock.sql).toContain("decision.decision_type = 'VIDEO_CONSULTATION'");
+  });
+
+  test("BOTH referral with video service label but no signed decision can use hospital confirm", async () => {
+    mockHandler = defaultHandler({
+      "FOR UPDATE OF appointment": {
+        rows: [appointment({
+          referral_mode: "BOTH",
+          assigned_service: "ENT - Video Consultation",
+          has_active_video_consultation: false,
+          signed_video_decision: false,
+        })],
+      },
+    });
+    const result = await service.confirmAppointment("staff-1", { user: { id: "staff-1" } }, APPOINTMENT);
+    expect(result).toMatchObject({ status_code: "CONFIRMED" });
+    expect(mockQueries.some(({ sql }) => sql.includes("UPDATE tbl_hospital_appointments"))).toBe(true);
   });
 
   test("conflicting appointment time blocks confirmation", async () => {

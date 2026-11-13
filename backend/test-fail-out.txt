@@ -1,0 +1,180 @@
+﻿npx : FAIL tests/unit/specialistAvailabilityRequests.test.js
+At line:1 char:45
++ ... ti\backend; npx jest tests/unit/specialistAvailabilityRequests.test.j ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (FAIL tests/unit...equests.test.js:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  ● Hospital Staff final video appointment confirmation › confirmation atomically creates the video appointment and 
+never a regular appointment
+
+    Patient already has an active video appointment in status REQUEST_ACCEPTED.
+
+      669 |   const when = blocking?.slot_start || null;
+      670 |   const code = blocking?.patient_code || null;
+    > 671 |   return new HttpError(
+          |          ^
+      672 |     409,
+      673 |     blocking
+      674 |       ? `Patient already has an active video appointment${code ? ` (${code})` : ""}${status ? ` in status 
+${status}` : ""}${when ? ` scheduled ${when}` : ""}.`
+
+      at activeAppointmentExistsError (services/specialistAvailabilityRequestService.js:671:10)
+      at activeAppointmentExistsError (services/specialistAvailabilityRequestService.js:699:11)
+      at services/specialistAvailabilityRequestService.js:2010:7
+      at withTransaction (services/medicalOfficer/scope.js:98:20)
+      at Object.confirmHospitalRequest (services/specialistAvailabilityRequestService.js:1976:12)
+      at Object.<anonymous> (tests/unit/specialistAvailabilityRequests.test.js:620:20)
+
+  ● Hospital Staff final video appointment confirmation › replacement availability confirmation updates the existing 
+consultation instead of duplicating it
+
+    Patient already has an active video appointment in status REQUESTED.
+
+      669 |   const when = blocking?.slot_start || null;
+      670 |   const code = blocking?.patient_code || null;
+    > 671 |   return new HttpError(
+          |          ^
+      672 |     409,
+      673 |     blocking
+      674 |       ? `Patient already has an active video appointment${code ? ` (${code})` : ""}${status ? ` in status 
+${status}` : ""}${when ? ` scheduled ${when}` : ""}.`
+
+      at activeAppointmentExistsError (services/specialistAvailabilityRequestService.js:671:10)
+      at activeAppointmentExistsError (services/specialistAvailabilityRequestService.js:691:11)
+      at services/specialistAvailabilityRequestService.js:2010:7
+      at withTransaction (services/medicalOfficer/scope.js:98:20)
+      at Object.confirmHospitalRequest (services/specialistAvailabilityRequestService.js:1976:12)
+      at Object.<anonymous> (tests/unit/specialistAvailabilityRequests.test.js:673:20)
+
+  ● Hospital Staff final video appointment confirmation › concurrent confirmation attempts for one Specialist slot 
+produce only one booking
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 1
+    Received length: 0
+    Received array:  []
+
+      831 |     ]);
+      832 |
+    > 833 |     expect(confirmations.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+          |                                                                             ^
+      834 |     expect(confirmations.filter((result) => result.status === "rejected")).toHaveLength(1);
+      835 |     expect(confirmations.find((result) => result.status === "rejected").reason).toMatchObject({
+      836 |       status: 409,
+
+      at Object.toHaveLength (tests/unit/specialistAvailabilityRequests.test.js:833:77)
+
+  ● Navigator preferred video time coordination › confirming a Specialist alternative keeps the original requested 
+time on the request row
+
+    Patient already has an active video appointment in status REQUEST_SUGGESTED.
+
+      669 |   const when = blocking?.slot_start || null;
+      670 |   const code = blocking?.patient_code || null;
+    > 671 |   return new HttpError(
+          |          ^
+      672 |     409,
+      673 |     blocking
+      674 |       ? `Patient already has an active video appointment${code ? ` (${code})` : ""}${status ? ` in status 
+${status}` : ""}${when ? ` scheduled ${when}` : ""}.`
+
+      at activeAppointmentExistsError (services/specialistAvailabilityRequestService.js:671:10)
+      at activeAppointmentExistsError (services/specialistAvailabilityRequestService.js:699:11)
+      at services/specialistAvailabilityRequestService.js:2010:7
+      at withTransaction (services/medicalOfficer/scope.js:98:20)
+      at Object.confirmHospitalRequest (services/specialistAvailabilityRequestService.js:1976:12)
+      at Object.<anonymous> (tests/unit/specialistAvailabilityRequests.test.js:1006:20)
+
+  ● Cancelled video consultation rescheduling › Navigator can reschedule after CANCELLED without reopening COMPLETED 
+referral
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      1058 |     expect(mockQueries.some(({ sql }) =>
+      1059 |       sql.includes("SET is_active = FALSE") && sql.includes("CANCELLED")
+    > 1060 |     )).toBe(true);
+           |        ^
+      1061 |     expect(mockQueries.some(({ sql }) =>
+      1062 |       sql.includes("UPDATE tbl_referrals") && sql.includes("COMPLETED")
+      1063 |     )).toBe(false);
+
+      at Object.toBe (tests/unit/specialistAvailabilityRequests.test.js:1060:8)
+
+  ● Cancelled video consultation rescheduling › Hospital Staff can request Specialist availability from a cancelled 
+consultation
+
+    The video consultation is no longer available for rescheduling
+
+      1370 |       );
+      1371 |       if (!cancelledRows.length) {
+    > 1372 |       throw new HttpError(409, "The video consultation is no longer available for rescheduling", 
+"CONSULTATION_NOT_FOUND");
+           |             ^
+      1373 |       }
+      1374 |     }
+      1375 |
+
+      at services/specialistAvailabilityRequestService.js:1372:13
+      at withTransaction (services/medicalOfficer/scope.js:98:20)
+      at Object.<anonymous> (tests/unit/specialistAvailabilityRequests.test.js:1095:20)
+
+  ● Cancelled video consultation rescheduling › confirming Specialist alternative after cancel inserts a new 
+consultation ID
+
+    Patient already has an active video appointment in status REQUEST_SUGGESTED.
+
+      669 |   const when = blocking?.slot_start || null;
+      670 |   const code = blocking?.patient_code || null;
+    > 671 |   return new HttpError(
+          |          ^
+      672 |     409,
+      673 |     blocking
+      674 |       ? `Patient already has an active video appointment${code ? ` (${code})` : ""}${status ? ` in status 
+${status}` : ""}${when ? ` scheduled ${when}` : ""}.`
+
+      at activeAppointmentExistsError (services/specialistAvailabilityRequestService.js:671:10)
+      at activeAppointmentExistsError (services/specialistAvailabilityRequestService.js:699:11)
+      at services/specialistAvailabilityRequestService.js:2010:7
+      at withTransaction (services/medicalOfficer/scope.js:98:20)
+      at Object.confirmHospitalRequest (services/specialistAvailabilityRequestService.js:1976:12)
+      at Object.<anonymous> (tests/unit/specialistAvailabilityRequests.test.js:1199:20)
+
+  ● Active appointment guard and MISSED reschedule › concurrent Path 1 confirmations cannot create duplicate active 
+appointments
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"attendance": "PENDING", "id": "99999999-9999-4999-8999-999999999999", 
+"meeting_already_existed": false, "meeting_error": "Video meetings are not configured. Set VIDEO_PROVIDER=jitsi and 
+JITSI_DOMAIN=meet.jit.si on the server, then retry meeting provisioning.", "meeting_error_code": 
+"VIDEO_PROVIDER_NOT_CONFIGURED", "meeting_expires_at": null, "meeting_provisioned": false, "meeting_retry_path": 
+"/api/video-consultations/99999999-9999-4999-8999-999999999999/provision", "provider": null, "request_id": 
+"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "room_ref": null, "scheduled_at": 2035-02-01T10:00:00.000Z, "slot_end": 
+2035-02-01T10:30:00.000Z, "slot_id": "ffffffff-ffff-4fff-8fff-ffffffffffff", "status_code": "CONFIRMED", "status_id": 
+2}
+
+      1444 |     expect(first.status_code).toBe("CONFIRMED");
+      1445 |
+    > 1446 |     await expect(service.directConfirmHospitalSlot(
+           |           ^
+      1447 |       HOSPITAL_STAFF,
+      1448 |       { user: { id: HOSPITAL_STAFF, role_name: "HOSPITAL_STAFF" } },
+      1449 |       { referral_id: REFERRAL, slot_id: SLOT }
+
+      at expect (node_modules/expect/build/index.js:2116:15)
+      at Object.expect (tests/unit/specialistAvailabilityRequests.test.js:1446:11)
+
+Test Suites: 1 failed, 1 total
+Tests:       8 failed, 38 skipped, 46 total
+Snapshots:   0 total
+Time:        0.729 s, estimated 1 s
+Ran all test suites matching tests/unit/specialistAvailabilityRequests.test.js with tests matching "confirmation 
+atomically|replacement availability|concurrent confirmation attempts|keeps the original requested|Navigator can 
+reschedule after CANCELLED|Hospital Staff can request Specialist availability from a cancelled|confirming Specialist 
+alternative after cancel|concurrent Path 1".

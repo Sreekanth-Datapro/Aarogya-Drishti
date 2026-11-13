@@ -6,6 +6,7 @@ import { useLanguage } from "../../i18n/LanguageContext";
 import { formatLocalizedDateTime } from "../../i18n/displayLabels";
 import { apiMessage } from "../../i18n/translate";
 import { Alert, Badge, Button, PageLoader } from "../../components/ui";
+import DiagnosticReportUploadPanel from "./DiagnosticReportUploadPanel";
 import "../medicalOfficer/MedicalOfficer.css";
 import "./Diagnostics.css";
 
@@ -30,7 +31,7 @@ function statusTone(status) {
 
 export default function DiagnosticAppointmentDetails({ role }) {
   const { appointmentId } = useParams();
-  const { t, language } = useLanguage();
+  const { t, tm, language } = useLanguage();
   const backPath =
     role === "HOSPITAL_STAFF"
       ? "/hospital-staff/diagnostics"
@@ -53,7 +54,7 @@ export default function DiagnosticAppointmentDetails({ role }) {
   const [contactNotes, setContactNotes] = useState("");
   const [attendance, setAttendance] = useState("ATTENDED");
   const [missedReason, setMissedReason] = useState("");
-  const [uploading, setUploading] = useState(false);
+  const [orderReports, setOrderReports] = useState([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -65,12 +66,23 @@ export default function DiagnosticAppointmentDetails({ role }) {
       setConfirmTime(row.requested_at ? new Date(row.requested_at).toISOString().slice(0, 16) : "");
       setContactStatus(row.contact_status || "INFORMED");
       setContactNotes(row.contact_notes || "");
+      const orderId = row.order_id || row.diagnostic_order_id;
+      if (orderId && (role === "HEALTH_WORKER" || role === "HOSPITAL_STAFF" || role === "NAVIGATOR")) {
+        try {
+          const reportRes = await api.get(`/diagnostics/orders/${orderId}/reports`);
+          setOrderReports(reportRes.data.reports || []);
+        } catch (_reportError) {
+          setOrderReports([]);
+        }
+      } else {
+        setOrderReports([]);
+      }
     } catch (requestError) {
       setError(apiMessage(requestError, "diagnostics.loadFailed"));
     } finally {
       setLoading(false);
     }
-  }, [appointmentId]);
+  }, [appointmentId, role]);
 
   useEffect(() => {
     load();
@@ -88,29 +100,6 @@ export default function DiagnosticAppointmentDetails({ role }) {
       setError(apiMessage(requestError, "diagnostics.saveFailed"));
     } finally {
       setBusy(false);
-    }
-  }
-
-  async function uploadReport(event) {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file || !appointment?.order_id) return;
-    if (!window.confirm(t("diagnostics.confirmUploadReport"))) return;
-    setUploading(true);
-    setError("");
-    setMessage("");
-    try {
-      const body = new FormData();
-      body.append("report", file);
-      await api.post(`/diagnostics/orders/${appointment.order_id}/reports`, body, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      setMessage(t("diagnostics.reportUploaded"));
-      await load();
-    } catch (requestError) {
-      setError(apiMessage(requestError, "diagnostics.saveFailed"));
-    } finally {
-      setUploading(false);
     }
   }
 
@@ -148,8 +137,8 @@ export default function DiagnosticAppointmentDetails({ role }) {
         </Link>
       </div>
 
-      {error && <Alert type="error">{error}</Alert>}
-      {message && <Alert type="success">{message}</Alert>}
+      {error && <Alert type="error">{tm(error)}</Alert>}
+      {message && <Alert type="success">{tm(message)}</Alert>}
 
       <section className="mo-card">
         <h2>{t("diagnostics.appointmentSummary")}</h2>
@@ -388,31 +377,27 @@ export default function DiagnosticAppointmentDetails({ role }) {
                 </div>
               </>
             )}
-            <label className="diagnostics-upload">
-              <span>{t("diagnostics.uploadReportHint")}</span>
-              <input
-                type="file"
-                accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
-                disabled={busy || uploading}
-                onChange={uploadReport}
-              />
-            </label>
           </div>
         </section>
       )}
 
-      {role === "HOSPITAL_STAFF" && (
+      {(role === "HEALTH_WORKER" || role === "HOSPITAL_STAFF") && (
         <section className="mo-card">
           <h2>{t("diagnostics.uploadReport")}</h2>
-          <label className="diagnostics-upload">
-            <span>{t("diagnostics.uploadReportHint")}</span>
-            <input
-              type="file"
-              accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
-              disabled={busy || uploading}
-              onChange={uploadReport}
-            />
-          </label>
+          <DiagnosticReportUploadPanel
+            orderId={appointment.order_id || appointment.diagnostic_order_id}
+            requiredDocuments={appointment.required_documents || []}
+            existingReports={orderReports}
+            disabled={busy}
+            onUploaded={async (data) => {
+              if (data?.requirements_met === false) {
+                setMessage(data.message || t("diagnostics.reportsPartialRequirements"));
+              } else {
+                setMessage(data?.message || t("diagnostics.reportUploaded"));
+              }
+              await load();
+            }}
+          />
         </section>
       )}
 

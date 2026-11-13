@@ -27,12 +27,23 @@ export const OFFLINE_ALLOWED_PATH_PREFIXES = [
 ];
 
 export const DRAFT_STATUS = {
+  /** Incomplete form saved on-device — never submitted to the server. */
+  LOCAL_DRAFT: "local_draft",
+  /** Completed form waiting for online sync. */
   PENDING: "pending",
   SYNCING: "syncing",
   SYNCED: "synced",
   FAILED: "failed",
   NEEDS_CONFIRMATION: "needs_confirmation",
 };
+
+/** Statuses that may be posted to POST /patients once online. */
+export const SYNC_ELIGIBLE_STATUSES = [
+  DRAFT_STATUS.PENDING,
+  DRAFT_STATUS.FAILED,
+  DRAFT_STATUS.NEEDS_CONFIRMATION,
+  DRAFT_STATUS.SYNCING,
+];
 
 // Production uses a high iteration count; Jest uses a lighter value so suites stay fast.
 export const PBKDF2_ITERATIONS =

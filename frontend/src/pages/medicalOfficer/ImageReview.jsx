@@ -345,6 +345,39 @@ export default function ImageReview() {
               {details.image_quality?.model_assessment && (
                 <p><strong>{t("mo.imageModelAssessment")}:</strong> {details.image_quality.model_assessment}</p>
               )}
+              {(details.image_quality_score || details.image_quality?.score_report) && (
+                <p>
+                  <strong>{t("mo.imageQualityScore")}:</strong>{" "}
+                  {(details.image_quality_score || details.image_quality.score_report).status === "INSUFFICIENT"
+                    ? ((details.image_quality_score || details.image_quality.score_report).label || t("mo.insufficientImageQuality"))
+                    : `${formatLocalizedNumber((details.image_quality_score || details.image_quality.score_report).score, language)}/100`}
+                </p>
+              )}
+              <p>
+                <strong>{t("mo.visualHealthAssessmentScore")}:</strong>{" "}
+                {details.visual_health_assessment_score == null && image.ai_score == null
+                  ? t("mo.scoreNotAvailable")
+                  : `${formatLocalizedNumber(
+                    details.visual_health_assessment_score != null
+                      ? details.visual_health_assessment_score
+                      : Number(image.ai_score) * 100,
+                    language
+                  )}/100`}
+              </p>
+              <p className="mo-muted">
+                {details.visual_health_assessment_score_message
+                  || t("mo.visualHealthScoreUnavailable")}
+              </p>
+              {Array.isArray(details.visual_health_assessment_score_reasons)
+                && details.visual_health_assessment_score_reasons.length > 0 && (
+                <ul>
+                  {details.visual_health_assessment_score_reasons.map((item) => (
+                    <li key={`${image.id}-score-${item.feature}`}>
+                      {item.reason || `${item.description || item.feature}: ${item.points}/100`}
+                    </li>
+                  ))}
+                </ul>
+              )}
               {details.image_quality?.warnings?.map((warning) => (
                 <p className="mo-warning" key={warning}>{t(`mo.aiQualityWarnings.${warning}`)}</p>
               ))}
@@ -369,9 +402,21 @@ export default function ImageReview() {
               {details.recommendation && (
                 <p><strong>{t("mo.aiRecommendation")}:</strong> {details.recommendation}</p>
               )}
-              {image.ai_score != null && (
-                <p>{t("mo.aiScore")}: {formatLocalizedNumber(Number(image.ai_score) * 100, language)}/100</p>
+              {(details.observation_confidence != null || details.model_confidence != null) && (
+                <p className="mo-muted">
+                  {t("mo.aiScore")}:{" "}
+                  {formatLocalizedNumber(
+                    details.observation_confidence ?? details.model_confidence,
+                    language
+                  )}/100
+                </p>
               )}
+              {details.visual_health_assessment_score == null
+                && image.ai_score == null
+                && (details.model_status === "INVALID_OUTPUT" || details.model_status === "NOT_ASSESSABLE") && (
+                <p className="mo-warning">{t("mo.analysisUnavailable")}</p>
+              )}
+              <p className="mo-muted">{t("mo.visualHealthScoreSafety")}</p>
               {image.ai_model_provider && (
                 <p>{t("mo.aiModel")}: {image.ai_model_provider} · {image.ai_model_version}</p>
               )}

@@ -3,8 +3,9 @@ import { AuthContext } from "../../context/AuthContext";
 import { useLanguage } from "../../i18n/LanguageContext";
 
 /**
- * Network / offline-mode banner. Works outside AuthProvider for plain
- * connectivity, and upgrades to OFFLINE MODE when AuthContext is present.
+ * Connectivity / offline-mode banner.
+ * Hidden while online so it does not cover the sidebar logo.
+ * Shown for network offline, offline auth mode, or pending draft sync.
  */
 export default function OfflineBanner() {
   const { t } = useLanguage();
@@ -25,21 +26,27 @@ export default function OfflineBanner() {
   }, []);
 
   const isOfflineMode = Boolean(auth?.isOffline);
+  const hasSession = Boolean(auth?.user);
   const pendingDraftCount = auth?.pendingDraftCount || 0;
+  const needsAttention = offline || isOfflineMode || pendingDraftCount > 0;
 
-  if (!offline && !isOfflineMode) return null;
+  // Guests: only when the network is down. Signed-in: only when attention is needed
+  // (never a permanent "Online" strip that covers the logo).
+  if (!needsAttention) return null;
+  if (!hasSession && !offline) return null;
 
   const label = isOfflineMode
     ? t("offline.modeBanner")
-    : t("pwa.offlineBanner");
+    : offline
+      ? t("pwa.offlineBanner")
+      : t("offline.pendingBadge", { count: pendingDraftCount });
+
+  const tone = isOfflineMode || offline ? "offline-banner" : "offline-banner online";
 
   return (
-    <div className="offline-banner" role="status" aria-live="polite">
-      <span>
-        {label}
-        {pendingDraftCount > 0 ? ` · ${t("offline.pendingBadge", { count: pendingDraftCount })}` : ""}
-      </span>
-      {!isOfflineMode && (
+    <div className={tone} role="status" aria-live="polite">
+      <span>{label}</span>
+      {offline && !isOfflineMode && (
         <button type="button" onClick={() => window.location.reload()}>
           {t("pwa.retry")}
         </button>

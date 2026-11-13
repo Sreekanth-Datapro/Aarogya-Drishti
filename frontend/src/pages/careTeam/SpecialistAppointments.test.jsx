@@ -55,6 +55,8 @@ const appointmentsData = {
     scheduled_end: "2035-02-02T10:30:00.000Z",
     status: "CONFIRMED",
     consultation_type: "VIDEO",
+    attendance: "PENDING",
+    can_join: true,
   }],
   completed_consultations: [{
     id: "video-completed",
@@ -69,6 +71,41 @@ const appointmentsData = {
     scheduled_end: "2035-02-03T10:30:00.000Z",
     status: "COMPLETED",
     consultation_type: "VIDEO",
+    attendance: "ATTENDED",
+    can_join: false,
+  }],
+  missed_appointments: [{
+    id: "video-missed",
+    patient_name: "Missed Patient",
+    patient_code: "SYNTH-PAT-011",
+    referral_id: "missed-referral-id",
+    referral_code: "SYNTH-REF-011",
+    hospital_name: "Synthetic Hospital",
+    hospital_staff_name: "Staff Member",
+    specialty_name: "Synthetic ENT",
+    scheduled_start: "2035-02-01T05:00:00.000Z",
+    scheduled_end: "2035-02-01T05:30:00.000Z",
+    status: "MISSED",
+    consultation_type: "VIDEO",
+    attendance: "NO_SHOW",
+    can_join: false,
+    join_blocked_reason: "MISSED",
+  }],
+  rescheduled_appointments: [{
+    id: "video-rescheduled",
+    patient_name: "Rescheduled Patient",
+    patient_code: "SYNTH-PAT-012",
+    referral_id: "rescheduled-referral-id",
+    referral_code: "SYNTH-REF-012",
+    hospital_name: "Synthetic Hospital",
+    hospital_staff_name: "Staff Member",
+    specialty_name: "Synthetic ENT",
+    scheduled_start: "2035-01-20T05:00:00.000Z",
+    scheduled_end: "2035-01-20T05:30:00.000Z",
+    status: "RESCHEDULED",
+    consultation_type: "VIDEO",
+    can_join: false,
+    join_blocked_reason: "RESCHEDULED",
   }],
 };
 
@@ -96,7 +133,7 @@ function renderPage() {
   );
 }
 
-test("shows pending, accepted, confirmed, and completed Specialist appointment records", async () => {
+test("shows pending, accepted, confirmed, completed, missed, and rescheduled Specialist appointment records", async () => {
   renderPage();
 
   expect((await screen.findAllByText("Synthetic Patient")).length).toBeGreaterThan(0);
@@ -104,14 +141,26 @@ test("shows pending, accepted, confirmed, and completed Specialist appointment r
   expect(screen.getAllByText("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb").length).toBeGreaterThan(0);
   expect(screen.getByText("Confirmed Patient")).toBeInTheDocument();
   expect(screen.getByText("Completed Patient")).toBeInTheDocument();
+  expect(screen.getByText("Missed Patient")).toBeInTheDocument();
+  expect(screen.getByText("Rescheduled Patient")).toBeInTheDocument();
   expect(screen.getByText("Pending Availability Requests")).toBeInTheDocument();
   expect(screen.getByText("Accepted Requests")).toBeInTheDocument();
   expect(screen.getByText("Confirmed Appointments")).toBeInTheDocument();
   expect(screen.getByText("Completed Consultations")).toBeInTheDocument();
+  expect(screen.getByText("Missed Appointments")).toBeInTheDocument();
+  expect(screen.getByText("Rescheduled Appointments")).toBeInTheDocument();
 
   expect(api.get).toHaveBeenCalledWith("/auth/me");
   expect(api.get).toHaveBeenCalledWith("/specialist/appointments");
   expect(mockUpdateUser).toHaveBeenCalledWith({ permissions: ["appointment.slot_manage"] });
+});
+
+test("hides Join Consultation for missed appointments and shows it for joinable confirmed ones", async () => {
+  renderPage();
+  await screen.findByText("Confirmed Patient");
+  expect(screen.getByRole("button", { name: /Join Consultation/i })).toBeInTheDocument();
+  expect(screen.getByText("Missed Patient")).toBeInTheDocument();
+  expect(screen.queryAllByRole("button", { name: /Join Consultation/i })).toHaveLength(1);
 });
 
 test("records an availability response without treating it as a booked appointment", async () => {

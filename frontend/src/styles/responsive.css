@@ -225,7 +225,16 @@ canvas {
   }
 }
 
-/* Offline / PWA banners */
+/* Offline / PWA banners — clear fixed sidebar so the logo is never covered */
+:root {
+  --connectivity-banner-height: 0px;
+}
+
+body:has(.offline-banner),
+body:has(.pwa-update-banner) {
+  --connectivity-banner-height: 2.75rem;
+}
+
 .offline-banner,
 .pwa-update-banner {
   position: sticky;
@@ -239,12 +248,27 @@ canvas {
   padding-left: calc(var(--space-4) + var(--safe-left));
   padding-right: calc(var(--space-4) + var(--safe-right));
   font-size: var(--text-sm);
+  min-height: var(--connectivity-banner-height);
+  box-sizing: border-box;
+}
+
+.admin-sidebar,
+.sidebar {
+  /* Keep logo below connectivity banners (fixed sidebar ignores document flow) */
+  inset: var(--connectivity-banner-height) auto 0 0;
+  height: auto;
 }
 
 .offline-banner {
   background: #fff6e5;
   color: #92400e;
   border-bottom: 1px solid #f3d19c;
+}
+
+.offline-banner.online {
+  background: #ecfdf3;
+  color: #166534;
+  border-bottom: 1px solid #bbf7d0;
 }
 
 .pwa-update-banner {

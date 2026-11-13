@@ -61,6 +61,7 @@ import NavigatorDashboard from "./pages/careTeam/NavigatorDashboard";
 import NavigatorCareFollowups from "./pages/careTeam/NavigatorCareFollowups";
 import SpecialistDashboard from "./pages/careTeam/SpecialistDashboard";
 import SpecialistAppointments from "./pages/careTeam/SpecialistAppointments";
+import SpecialistClinicalNotes from "./pages/careTeam/SpecialistClinicalNotes";
 import MyAppointments from "./pages/careTeam/MyAppointments";
 import VideoConsultationMeeting from "./pages/careTeam/VideoConsultationMeeting";
 import CareFollowups from "./pages/healthWorker/CareFollowups";
@@ -101,11 +102,23 @@ function SpDiagnosticDetailsPage() {
 function HsDiagnosticsPage() {
   return <DiagnosticAppointments role="HOSPITAL_STAFF" />;
 }
+function HsDiagnosticOrdersPage() {
+  return <DiagnosticOrders role="HOSPITAL_STAFF" />;
+}
+function HsDiagnosticOrderDetailsPage() {
+  return <DiagnosticOrderDetails role="HOSPITAL_STAFF" />;
+}
 function HsDiagnosticAppointmentPage() {
   return <DiagnosticAppointmentDetails role="HOSPITAL_STAFF" />;
 }
 function HwDiagnosticsPage() {
   return <DiagnosticAppointments role="HEALTH_WORKER" />;
+}
+function HwDiagnosticOrdersPage() {
+  return <DiagnosticOrders role="HEALTH_WORKER" />;
+}
+function HwDiagnosticOrderDetailsPage() {
+  return <DiagnosticOrderDetails role="HEALTH_WORKER" />;
 }
 function HwDiagnosticAppointmentPage() {
   return <DiagnosticAppointmentDetails role="HEALTH_WORKER" />;
@@ -183,7 +196,7 @@ function AppRoutes() {
           <Route
             path="/admin/roles"
             element={
-              <RequireRole roles={["SUPER_ADMIN"]} permissions={[P("roleManagement")]}>
+              <RequireRole roles={["SUPER_ADMIN", "SYSTEM_ADMIN"]} permissions={[P("roleManagement")]}>
                 <RoleManagement />
               </RequireRole>
             }
@@ -247,6 +260,14 @@ function AppRoutes() {
                 permissions={[P("districtMedicalOfficers"), P("districtSpecialists"), P("districtNavigators"), P("districtHospitalStaff")]}
               >
                 <StaffManagement />
+              </RequireRole>
+            )}
+          />
+          <Route
+            path="/district/custom-accounts"
+            element={(
+              <RequireRole roles={["DISTRICT_ADMIN"]} permissions={[P("districtCustomAccounts")]}>
+                <StaffManagement customOnly />
               </RequireRole>
             )}
           />
@@ -343,6 +364,8 @@ function AppRoutes() {
                     ? <SpecialistDashboard />
                     : key === "spConsultations"
                       ? <SpecialistAppointments />
+                      : key === "spNotes"
+                        ? <SpecialistClinicalNotes />
                       : key === "spDiagnostics"
                         ? <SpDiagnosticsPage />
                         : key === "spTracking"
@@ -379,6 +402,14 @@ function AppRoutes() {
             element={<RequireRole roles={["HOSPITAL_STAFF"]} permissions={[P("hsDiagnostics")]}><HsDiagnosticsPage /></RequireRole>}
           />
           <Route
+            path="/hospital-staff/diagnostics/orders"
+            element={<RequireRole roles={["HOSPITAL_STAFF"]} permissions={[P("hsDiagnostics")]}><HsDiagnosticOrdersPage /></RequireRole>}
+          />
+          <Route
+            path="/hospital-staff/diagnostics/orders/:orderId"
+            element={<RequireRole roles={["HOSPITAL_STAFF"]} permissions={[P("hsDiagnostics")]}><HsDiagnosticOrderDetailsPage /></RequireRole>}
+          />
+          <Route
             path="/hospital-staff/diagnostics/:appointmentId"
             element={<RequireRole roles={["HOSPITAL_STAFF"]} permissions={[P("hsDiagnostics")]}><HsDiagnosticAppointmentPage /></RequireRole>}
           />
@@ -393,6 +424,14 @@ function AppRoutes() {
           <Route
             path="/health-worker/diagnostics"
             element={<RequireRole roles={["HEALTH_WORKER"]} permissions={[P("healthWorkerDiagnostics")]}><HwDiagnosticsPage /></RequireRole>}
+          />
+          <Route
+            path="/health-worker/diagnostics/orders"
+            element={<RequireRole roles={["HEALTH_WORKER"]} permissions={[P("healthWorkerDiagnostics")]}><HwDiagnosticOrdersPage /></RequireRole>}
+          />
+          <Route
+            path="/health-worker/diagnostics/orders/:orderId"
+            element={<RequireRole roles={["HEALTH_WORKER"]} permissions={[P("healthWorkerDiagnostics")]}><HwDiagnosticOrderDetailsPage /></RequireRole>}
           />
           <Route
             path="/health-worker/diagnostics/:appointmentId"

@@ -15,7 +15,14 @@ function mockClient(handlers = []) {
   return {
     query: jest.fn(async (sql, params) => {
       const text = String(sql).trim().toUpperCase();
-      if (text === "BEGIN" || text === "COMMIT" || text === "ROLLBACK") {
+      if (
+        text === "BEGIN"
+        || text === "COMMIT"
+        || text === "ROLLBACK"
+        || text.startsWith("SAVEPOINT ")
+        || text.startsWith("RELEASE SAVEPOINT ")
+        || text.startsWith("ROLLBACK TO SAVEPOINT ")
+      ) {
         return { rows: [], rowCount: 0 };
       }
       const handler = handlers[call];
@@ -168,9 +175,7 @@ describe("diagnosticOrderService", () => {
       { rows: [] }, // navigator notify dedupe miss
       { rows: [{ id: 10, language_id: 1 }] }, // navigator template
       { rows: [] }, // navigator notification insert
-      { rows: [] }, // HW notify dedupe miss
-      { rows: [{ id: 10, language_id: 1 }] }, // HW template
-      { rows: [] }, // HW notification insert
+      { rows: [] }, // workflow_status update (Navigator-centered; no HW notify on create)
       {
         rows: [
           {
@@ -247,9 +252,9 @@ describe("diagnosticOrderService", () => {
     const notificationCalls = client.query.mock.calls.filter(([sql]) =>
       String(sql).includes("INSERT INTO tbl_notifications")
     );
-    expect(notificationCalls).toHaveLength(2);
+    // Navigator only — Specialist must not assign/notify Health Worker directly.
+    expect(notificationCalls).toHaveLength(1);
     expect(notificationCalls[0][1][0]).toBe(navigatorId);
-    expect(notificationCalls[1][1][0]).toBe("77777777-7777-4777-8777-777777777777");
   });
 
   test("createOrder replays idempotent submissions", async () => {
@@ -339,5 +344,43 @@ describe("diagnosticOrderService", () => {
     ).rejects.toMatchObject({ status: 409, code: "DUPLICATE_ORDER" });
 
     expect(client.query).toHaveBeenCalledWith("ROLLBACK");
+  });
+
+  test("getOrderForUser on pool does not use SAVEPOINT", async () => {
+    const orderId = "367fd6a4-d351-4278-9d18-6b9a5e9a4404";
+    const queries = [];
+    pool.query.mockImplementation(async (sql) => {
+      const text = String(sql);
+      queries.push(text);
+      if (/LIMIT 0/i.test(text) && /workflow_status/i.test(text)) {
+        return { rows: [] };
+      }
+      if (/FROM tbl_diagnostic_orders diagnostic_order/i.test(text) && /WHERE diagnostic_order\.id/i.test(text)) {
+        return {
+          rows: [{
+            id: orderId,
+            order_code: "DX-1",
+            patient_id: "11111111-1111-4111-8111-111111111111",
+            status_code: "ADVISED",
+            status_name: "Advised",
+            patient_code: "P-1",
+            patient_name: "Patient",
+            facility_name: "Hospital",
+            prescribed_by_name: "MO",
+            prescribed_by_role: "MEDICAL_OFFICER",
+          }],
+        };
+      }
+      return { rows: [] };
+    });
+
+    const result = await service.getOrderForUser(
+      "admin-1",
+      "SYSTEM_ADMIN",
+      orderId
+    );
+
+    expect(result.order.id).toBe(orderId);
+    expect(queries.some((sql) => /SAVEPOINT/i.test(sql))).toBe(false);
   });
 });

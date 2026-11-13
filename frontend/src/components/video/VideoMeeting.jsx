@@ -35,15 +35,26 @@ export default function VideoMeeting({
   roomName,
   displayName,
   onLeft,
+  onPresence,
 }) {
   const { t } = useLanguage();
   const containerRef = useRef(null);
   const apiRef = useRef(null);
+  const presenceRef = useRef(onPresence);
   const [status, setStatus] = useState("loading");
   const [detail, setDetail] = useState("");
 
   useEffect(() => {
+    presenceRef.current = onPresence;
+  }, [onPresence]);
+
+  useEffect(() => {
     let cancelled = false;
+    const emitPresence = (event) => {
+      if (typeof presenceRef.current === "function") {
+        Promise.resolve(presenceRef.current(event)).catch(() => {});
+      }
+    };
 
     async function start() {
       if (!domain || !roomName || !containerRef.current) {
@@ -80,6 +91,7 @@ export default function VideoMeeting({
           if (!cancelled) {
             setStatus("joined");
             setDetail(t("videoMeeting.joined"));
+            emitPresence("JOINED");
           }
         });
         api.addListener("participantJoined", () => {
@@ -92,6 +104,7 @@ export default function VideoMeeting({
           if (!cancelled) {
             setStatus("ended");
             setDetail(t("videoMeeting.ended"));
+            emitPresence("LEFT");
           }
         });
         api.addListener("readyToClose", () => {
@@ -127,6 +140,9 @@ export default function VideoMeeting({
   }, [domain, roomName, displayName, t]);
 
   function leaveMeeting() {
+    if (typeof presenceRef.current === "function") {
+      Promise.resolve(presenceRef.current("LEFT")).catch(() => {});
+    }
     if (apiRef.current) {
       try {
         apiRef.current.executeCommand("hangup");

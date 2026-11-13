@@ -80,6 +80,7 @@ export const MODULES = {
   districtSpecialists: { icon: UserCheck, path: "/district/staff/specialists", group: "staffManagement" },
   districtNavigators: { icon: Truck, path: "/district/staff/navigators", group: "staffManagement" },
   districtHospitalStaff: { icon: Building, path: "/district/staff/hospital-staff", group: "staffManagement" },
+  districtCustomAccounts: { icon: UserCog, path: "/district/custom-accounts", group: "staffManagement" },
   districtRegistrations: { icon: ClipboardList, path: "/district/registrations" },
   districtFacilities: { icon: Hospital, path: "/admin/facilities" },
   districtLocations: { icon: MapPinned, path: "/district/locations" },
@@ -181,6 +182,7 @@ export const ROLE_MODULES = {
     "districtSpecialists",
     "districtNavigators",
     "districtHospitalStaff",
+    "districtCustomAccounts",
     "healthWorkerAssignments",
     "districtRegistrations",
     "districtFacilities",
@@ -257,9 +259,12 @@ export function getModulesForUser(user) {
     return getModulesForRole(role);
   }
 
-  return orderedModuleKeys(role, pageKeys)
-    .map((key) => toModuleEntry(key))
-    .filter(Boolean);
+  const keys = orderedModuleKeys(role, pageKeys);
+  // District Admins can provision custom-role accounts even before page.districtCustomAccounts is seeded.
+  if (role === "DISTRICT_ADMIN" && !keys.includes("districtCustomAccounts")) {
+    keys.push("districtCustomAccounts");
+  }
+  return keys.map((key) => toModuleEntry(key)).filter(Boolean);
 }
 
 export function getPagePermissionForPath(pathname) {

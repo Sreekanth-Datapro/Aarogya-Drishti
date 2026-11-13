@@ -12,6 +12,12 @@ const sessions = require("./sessionService");
 
 const CUSTOM_ROLE_PERMISSION_CODES = new Set(["master.view"]);
 const STAFF_ACCOUNT_ROLES = ["MEDICAL_OFFICER", "SPECIALIST", "NAVIGATOR", "HOSPITAL_STAFF"];
+const PRIVILEGED_ACCOUNT_ROLE_CODES = new Set([
+  "SUPER_ADMIN",
+  "SYSTEM_ADMIN",
+  "DISTRICT_ADMIN",
+  "MIGRATION",
+]);
 const PROTECTED_ROLE_CODES = new Set([
   "SUPER_ADMIN",
   "SYSTEM_ADMIN",
@@ -23,6 +29,69 @@ const PROTECTED_ROLE_CODES = new Set([
   "HEALTH_WORKER",
   "MIGRATION",
 ]);
+
+function isClinicalStaffRole(roleCode) {
+  return STAFF_ACCOUNT_ROLES.includes(roleCode);
+}
+
+async function listManagedAccountRoleCodes(queryable = pool) {
+  const { rows } = await queryable.query(
+    `SELECT code
+       FROM mst_roles
+      WHERE code = ANY($1::text[])
+         OR (
+           is_active IS TRUE
+           AND COALESCE(is_system_role, FALSE) = FALSE
+           AND code <> ALL($2::text[])
+         )
+      ORDER BY code`,
+    [STAFF_ACCOUNT_ROLES, [...PROTECTED_ROLE_CODES]]
+  );
+  return rows.map((row) => row.code);
+}
+
+async function resolveCreatableAccountRole(client, roleCode) {
+  const normalized = typeof roleCode === "string" ? roleCode.trim().toUpperCase() : "";
+  if (!normalized) {
+    throw new HttpError(400, "Invalid staff role", "INVALID_ROLE");
+  }
+  if (PRIVILEGED_ACCOUNT_ROLE_CODES.has(normalized)) {
+    throw new HttpError(403, "This role cannot be assigned through account creation", "ROLE_NOT_ASSIGNABLE");
+  }
+
+  if (isClinicalStaffRole(normalized)) {
+    const role = await client.query(
+      `SELECT id, code, name_en, name_te, description, mfa_required, is_system_role
+         FROM mst_roles
+        WHERE code = $1 AND is_active IS TRUE
+        FOR SHARE`,
+      [normalized]
+    );
+    if (!role.rows.length) {
+      throw new HttpError(500, "Staff role is unavailable", "ROLE_CONFIGURATION_ERROR");
+    }
+    return { ...role.rows[0], is_custom: false };
+  }
+
+  if (PROTECTED_ROLE_CODES.has(normalized)) {
+    throw new HttpError(403, "This role cannot be assigned through account creation", "ROLE_NOT_ASSIGNABLE");
+  }
+
+  const role = await client.query(
+    `SELECT id, code, name_en, name_te, description, mfa_required, is_system_role
+       FROM mst_roles
+      WHERE code = $1
+        AND is_active IS TRUE
+        AND COALESCE(is_system_role, FALSE) = FALSE
+        AND code <> ALL($2::text[])
+      FOR SHARE`,
+    [normalized, [...PROTECTED_ROLE_CODES]]
+  );
+  if (!role.rows.length) {
+    throw new HttpError(400, "Select an active custom role", "INVALID_ROLE");
+  }
+  return { ...role.rows[0], is_custom: true };
+}
 // Page permissions custom roles may not receive (privilege escalation / admin surfaces).
 const PROTECTED_PAGE_PERMISSION_CODES = new Set([
   "page.roleManagement",
@@ -185,7 +254,7 @@ async function validatePermissions(client, permissionIds) {
 }
 
 async function listRoles(actor) {
-  assertSuperAdmin(actor);
+  assertSystemAdmin(actor);
   const { rows } = await pool.query(
     `SELECT r.id, r.code, r.name_en AS name, r.name_te, r.description, r.is_active,
             r.is_system_role,
@@ -205,7 +274,7 @@ async function listRoles(actor) {
 }
 
 async function listAssignablePermissions(actor) {
-  assertSuperAdmin(actor);
+  assertSystemAdmin(actor);
   const { rows } = await pool.query(
     `SELECT id, code, resource, action, description,
             (
@@ -225,7 +294,7 @@ async function listAssignablePermissions(actor) {
 }
 
 async function createRole(actor, req, input) {
-  assertSuperAdmin(actor);
+  assertSystemAdmin(actor);
   if (!input || typeof input !== "object") {
     throw new HttpError(400, "Role details are required", "INVALID_ROLE");
   }
@@ -267,7 +336,7 @@ async function createRole(actor, req, input) {
 }
 
 async function updateRole(actor, req, roleId, input) {
-  assertSuperAdmin(actor);
+  assertSystemAdmin(actor);
   roleId = validateRoleId(roleId);
   if (!input || typeof input !== "object") {
     throw new HttpError(400, "Role details are required", "INVALID_ROLE");
@@ -303,7 +372,7 @@ async function updateRole(actor, req, roleId, input) {
 }
 
 async function updateRolePermissions(actor, req, roleId, permissionIds) {
-  assertSuperAdmin(actor);
+  assertSystemAdmin(actor);
   roleId = validateRoleId(roleId);
   const result = await withTransaction(async (client) => {
     const role = await getRole(client, roleId, true);
@@ -338,7 +407,7 @@ async function updateRolePermissions(actor, req, roleId, permissionIds) {
 }
 
 async function updateRoleStatus(actor, req, roleId, isActive) {
-  assertSuperAdmin(actor);
+  assertSystemAdmin(actor);
   roleId = validateRoleId(roleId);
   if (typeof isActive !== "boolean") {
     throw new HttpError(400, "is_active must be a boolean", "INVALID_ROLE_STATUS");
@@ -372,7 +441,7 @@ async function updateRoleStatus(actor, req, roleId, isActive) {
 }
 
 async function listRoleUsers(actor, roleId) {
-  assertSuperAdmin(actor);
+  assertSystemAdmin(actor);
   roleId = validateRoleId(roleId);
   const { rows } = await pool.query(
     `SELECT u.id, u.username, u.full_name, u.status, u.created_at
@@ -386,7 +455,7 @@ async function listRoleUsers(actor, roleId) {
 }
 
 async function getRbacDashboard(actor) {
-  assertSuperAdmin(actor);
+  assertSystemAdmin(actor);
   const [counts, activities] = await Promise.all([
     pool.query(
       `SELECT
@@ -442,7 +511,7 @@ function normalizeUserSearch(query = {}) {
 }
 
 async function listRbacUsers(actor, query = {}) {
-  assertSuperAdmin(actor);
+  assertSystemAdmin(actor);
   const { page, limit, offset, search } = normalizeUserSearch(query);
   const searchValue = search ? `%${search.toLowerCase()}%` : null;
   const where = `u.deleted_at IS NULL
@@ -489,7 +558,7 @@ async function listRbacUsers(actor, query = {}) {
 }
 
 async function updateUserRole(actor, req, userId, roleId) {
-  assertSuperAdmin(actor);
+  assertSystemAdmin(actor);
   userId = validateUserId(userId);
   roleId = validateRoleId(roleId);
 
@@ -731,10 +800,13 @@ function normalizeStaffInput(input, roleCode) {
 
 async function generateStaffUsername(client, fullName, roleCode) {
   const prefixes = { MEDICAL_OFFICER: "mo", SPECIALIST: "sp", NAVIGATOR: "nav", HOSPITAL_STAFF: "hs" };
+  const prefix = prefixes[roleCode]
+    || String(roleCode || "cr").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 8)
+    || "cr";
   const firstWord = fullName.toLowerCase().normalize("NFKD").replace(/[^a-z\s]/g, "").trim().split(/\s+/)[0] || "staff";
   const base = firstWord.slice(0, 20);
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    const candidate = `${prefixes[roleCode]}.${base}.${crypto.randomInt(1000, 10000)}`;
+    const candidate = `${prefix}.${base}.${crypto.randomInt(1000, 10000)}`;
     const taken = await client.query(
       `SELECT 1 FROM tbl_users WHERE lower(username) = $1
        UNION ALL
@@ -768,7 +840,8 @@ async function listStaff(actor, req, filters = {}) {
   const districtId = actor.role_name === "DISTRICT_ADMIN"
     ? await resolveAuthorizedDistrict(req)
     : filters.district_id ? Number(filters.district_id) : null;
-  const roleCode = filters.role_code && STAFF_ACCOUNT_ROLES.includes(filters.role_code)
+  const managedRoleCodes = await listManagedAccountRoleCodes();
+  const roleCode = filters.role_code && managedRoleCodes.includes(filters.role_code)
     ? filters.role_code
     : null;
   const page = Math.max(1, Number(filters.page) || 1);
@@ -813,7 +886,7 @@ async function listStaff(actor, req, filters = {}) {
         AND ($4::text IS NULL OR r.code=$4)
       ORDER BY lower(u.full_name),u.id LIMIT $5 OFFSET $6`,
     [
-      STAFF_ACCOUNT_ROLES,
+      managedRoleCodes,
       districtId,
       search || null,
       roleCode,
@@ -822,6 +895,47 @@ async function listStaff(actor, req, filters = {}) {
     ]
   );
   return rows;
+}
+
+async function listActiveCustomRolesForAccounts() {
+  const { rows: roles } = await pool.query(
+    `SELECT r.id, r.code, r.name_en, r.name_te, r.description
+       FROM mst_roles r
+      WHERE r.is_active IS TRUE
+        AND COALESCE(r.is_system_role, FALSE) = FALSE
+        AND r.code <> ALL($1::text[])
+      ORDER BY lower(r.name_en), r.code`,
+    [[...PROTECTED_ROLE_CODES]]
+  );
+  if (!roles.length) return [];
+
+  const roleIds = roles.map((role) => Number(role.id));
+  const { rows: permissionRows } = await pool.query(
+    `SELECT rp.role_id, p.code, p.resource, p.action, p.description
+       FROM tbl_role_permissions rp
+       JOIN mst_permissions p ON p.id = rp.permission_id
+      WHERE rp.role_id = ANY($1::bigint[])
+      ORDER BY p.code`,
+    [roleIds]
+  );
+
+  const byRole = new Map(roles.map((role) => [Number(role.id), {
+    ...role,
+    permissions: [],
+    permission_details: [],
+  }]));
+  permissionRows.forEach((row) => {
+    const entry = byRole.get(Number(row.role_id));
+    if (!entry) return;
+    entry.permissions.push(row.code);
+    entry.permission_details.push({
+      code: row.code,
+      resource: row.resource,
+      action: row.action,
+      description: row.description,
+    });
+  });
+  return [...byRole.values()];
 }
 
 async function listStaffOptions(actor, req) {
@@ -861,12 +975,22 @@ async function listStaffOptions(actor, req) {
       [districtId]
     ),
   ]);
+
+  let customRoles = [];
+  try {
+    customRoles = await listActiveCustomRolesForAccounts();
+  } catch (_error) {
+    customRoles = [];
+  }
+
   return {
     districts: districts.rows,
     facilities: facilities.rows,
     specialties: specialties.rows,
     mandals: mandals.rows,
     villages: villages.rows,
+    clinical_roles: STAFF_ACCOUNT_ROLES,
+    custom_roles: customRoles,
   };
 }
 
@@ -1053,27 +1177,23 @@ async function updateHealthWorkerAssignments(actor, req, userId, input) {
 
 async function createStaff(actor, req, roleCode, input) {
   assertStaffAdmin(actor);
-  if (!STAFF_ACCOUNT_ROLES.includes(roleCode)) {
-    throw new HttpError(400, "Invalid staff role", "INVALID_ROLE");
+  // Reject privileged roles before hashing so invalid requests fail fast.
+  if (PRIVILEGED_ACCOUNT_ROLE_CODES.has(String(roleCode || "").trim().toUpperCase())) {
+    throw new HttpError(403, "This role cannot be assigned through account creation", "ROLE_NOT_ASSIGNABLE");
   }
-  const normalized = normalizeStaffInput(input, roleCode);
-  const districtId = await resolveStaffDistrict(actor, req, normalized.districtId);
-
   const passwordHash = await bcrypt.hash(crypto.randomBytes(32).toString("hex"), 12);
   let user;
   try {
     user = await withTransaction(async (client) => {
+      const role = await resolveCreatableAccountRole(client, roleCode);
+      const normalized = normalizeStaffInput(input, role.code);
+      const districtId = await resolveStaffDistrict(actor, req, normalized.districtId);
+
       const district = await client.query(
         `SELECT id FROM mst_districts WHERE id=$1 AND is_active=TRUE FOR SHARE`,
         [districtId]
       );
       if (!district.rows.length) throw new HttpError(400, "Select an active district", "INVALID_DISTRICT");
-
-      const role = await client.query(
-        `SELECT id,mfa_required FROM mst_roles WHERE code=$1 AND is_active=TRUE FOR SHARE`,
-        [roleCode]
-      );
-      if (!role.rows.length) throw new HttpError(500, "Staff role is unavailable", "ROLE_CONFIGURATION_ERROR");
 
       const facility = await client.query(
         `SELECT id,facility_type FROM mst_facilities
@@ -1081,12 +1201,13 @@ async function createStaff(actor, req, roleCode, input) {
         [normalized.facilityId, districtId]
       );
       if (!facility.rows.length) throw new HttpError(400, "Select an active facility in the assigned district", "INVALID_FACILITY");
-      if (["SPECIALIST", "HOSPITAL_STAFF"].includes(roleCode)
+      if (!role.is_custom
+        && ["SPECIALIST", "HOSPITAL_STAFF"].includes(role.code)
         && String(facility.rows[0].facility_type) !== "HOSPITAL") {
         throw new HttpError(400, "This account must be assigned to an active hospital", "INVALID_HOSPITAL_FACILITY");
       }
 
-      if (roleCode === "MEDICAL_OFFICER") {
+      if (role.code === "MEDICAL_OFFICER") {
         const mandals = await client.query(
           `SELECT id FROM mst_mandals
             WHERE id=ANY($1::bigint[]) AND district_id=$2 AND is_active IS TRUE`,
@@ -1097,7 +1218,7 @@ async function createStaff(actor, req, roleCode, input) {
         }
       }
 
-      if (normalized.specialtyIds.length) {
+      if (!role.is_custom && normalized.specialtyIds.length) {
         const specialties = await client.query(
           `SELECT id FROM mst_specialties WHERE id=ANY($1::bigint[]) AND is_active=TRUE`,
           [normalized.specialtyIds]
@@ -1113,12 +1234,12 @@ async function createStaff(actor, req, roleCode, input) {
          VALUES ($1,$2,$3,$4,$5,$6,'PENDING_SETUP',$7,TRUE)
          RETURNING id,username,full_name,email,phone,status,district_id`,
         [
-          normalized.username || await generateStaffUsername(client, normalized.fullName, roleCode),
+          normalized.username || await generateStaffUsername(client, normalized.fullName, role.code),
           passwordHash,
           normalized.fullName,
           normalized.phone,
           normalized.email,
-          role.rows[0].id,
+          role.id,
           districtId,
         ]
       );
@@ -1129,7 +1250,7 @@ async function createStaff(actor, req, roleCode, input) {
          VALUES ($1,$2,TRUE,CURRENT_DATE,NULL)`,
         [created.id, normalized.facilityId]
       );
-      if (roleCode === "MEDICAL_OFFICER") {
+      if (role.code === "MEDICAL_OFFICER") {
         for (const mandalId of normalized.mandalIds) {
           await client.query(
             `INSERT INTO tbl_medical_officer_mandal_assignments
@@ -1140,11 +1261,16 @@ async function createStaff(actor, req, roleCode, input) {
         }
       }
       const credentials = await issueTemporaryCredentials(client, created, actor.id);
-      await writeAudit(client, req, `${roleCode}_CREATED`, "user", created.id, {
+      const auditEvent = role.is_custom ? "CUSTOM_ROLE_ACCOUNT_CREATED" : `${role.code}_CREATED`;
+      await writeAudit(client, req, auditEvent, "user", created.id, {
+        role_code: role.code,
+        role_id: role.id,
+        is_custom_role: role.is_custom,
+        created_by: actor.id,
         district_id: districtId,
         facility_id: normalized.facilityId,
-        mandal_ids: roleCode === "MEDICAL_OFFICER" ? normalized.mandalIds : undefined,
-        specialty_ids: roleCode === "SPECIALIST" ? normalized.specialtyIds : undefined,
+        mandal_ids: role.code === "MEDICAL_OFFICER" ? normalized.mandalIds : undefined,
+        specialty_ids: role.code === "SPECIALIST" ? normalized.specialtyIds : undefined,
         temporary_password_expires_hours: 24,
       });
       return { created, ...credentials };
@@ -1168,6 +1294,7 @@ async function getStaff(actor, req, userId) {
   const districtId = actor.role_name === "DISTRICT_ADMIN"
     ? await resolveAuthorizedDistrict(req)
     : null;
+  const managedRoleCodes = await listManagedAccountRoleCodes();
   const { rows } = await pool.query(
     `SELECT u.id,u.username,u.full_name,u.email,u.phone,u.status,u.district_id,u.created_at,u.updated_at,
             r.code AS role_code,r.name_en AS role_name,r.mfa_required,
@@ -1179,7 +1306,7 @@ async function getStaff(actor, req, userId) {
         AND r.code=ANY($2::text[])
         AND ($3::bigint IS NULL OR u.district_id=$3)
       LIMIT 1`,
-    [validateUserId(userId), STAFF_ACCOUNT_ROLES, districtId]
+    [validateUserId(userId), managedRoleCodes, districtId]
   );
   if (!rows.length) throw new HttpError(404, "Staff member not found", "STAFF_NOT_FOUND");
 
@@ -1214,6 +1341,7 @@ async function updateStaff(actor, req, userId, input) {
     ? await resolveAuthorizedDistrict(req)
     : null;
   const id = validateUserId(userId);
+  const managedRoleCodes = await listManagedAccountRoleCodes();
   await withTransaction(async (client) => {
     const current = await client.query(
       `SELECT u.id,u.role_id,u.district_id,r.code AS role_code
@@ -1222,7 +1350,7 @@ async function updateStaff(actor, req, userId, input) {
           AND r.code=ANY($2::text[])
           AND ($3::bigint IS NULL OR u.district_id=$3)
         FOR UPDATE`,
-      [id, STAFF_ACCOUNT_ROLES, districtId]
+      [id, managedRoleCodes, districtId]
     );
     if (!current.rows.length) throw new HttpError(404, "Staff member not found", "STAFF_NOT_FOUND");
 
@@ -1332,6 +1460,7 @@ async function setStaffStatus(actor, req, userId, status) {
   assertStaffAdmin(actor);
   const districtId = actor.role_name === "DISTRICT_ADMIN" ? await resolveAuthorizedDistrict(req) : null;
   if (!["ACTIVE", "SUSPENDED"].includes(status)) throw new HttpError(400, "Invalid staff status", "INVALID_STATUS");
+  const managedRoleCodes = await listManagedAccountRoleCodes();
   return withTransaction(async (client) => {
     const updated = await client.query(
       `UPDATE tbl_users u SET status=$1,updated_at=now()
@@ -1339,7 +1468,7 @@ async function setStaffStatus(actor, req, userId, status) {
           AND EXISTS (SELECT 1 FROM mst_roles r WHERE r.id=u.role_id AND r.code=ANY($3::text[]))
           AND ($4::bigint IS NULL OR u.district_id=$4)
         RETURNING u.id`,
-      [status, validateUserId(userId), STAFF_ACCOUNT_ROLES, districtId]
+      [status, validateUserId(userId), managedRoleCodes, districtId]
     );
     if (!updated.rows.length) throw new HttpError(404, "Staff member not found", "STAFF_NOT_FOUND");
     if (status === "SUSPENDED") await sessions.revokeAllSessions(userId, "ACCOUNT_SUSPENDED", {}, client);
@@ -1352,6 +1481,7 @@ async function resendStaffCredentials(actor, req, userId) {
   assertStaffAdmin(actor);
   const districtId = actor.role_name === "DISTRICT_ADMIN" ? await resolveAuthorizedDistrict(req) : null;
   const id = validateUserId(userId);
+  const managedRoleCodes = await listManagedAccountRoleCodes();
   let userResult;
   try {
     userResult = await withTransaction(async (client) => {
@@ -1362,7 +1492,7 @@ async function resendStaffCredentials(actor, req, userId) {
             AND r.code=ANY($2::text[])
             AND ($3::bigint IS NULL OR u.district_id=$3)
           FOR UPDATE`,
-        [id, STAFF_ACCOUNT_ROLES, districtId]
+        [id, managedRoleCodes, districtId]
       );
       if (!found.rows.length) throw new HttpError(404, "Staff member not found", "STAFF_NOT_FOUND");
       if (found.rows[0].status !== "PENDING_SETUP") {
@@ -1539,29 +1669,29 @@ async function deliverTemporaryCredentials({ user, temporaryPassword, tokenId, r
         temporaryPassword,
         loginUrl: getLoginUrl(),
       }));
-    } catch {
+      } catch {
       delivery = { success: false, status: "FAILED", message: "Delivery could not be completed." };
     }
 
     const deliveryStatus = {
       email: { status: delivery.status, message: delivery.message },
     };
-    await client.query(
-      `UPDATE tbl_district_admin_setup_tokens
+      await client.query(
+        `UPDATE tbl_district_admin_setup_tokens
           SET email_delivery_status = $1,
               email_delivery_attempted_at = now(),
               email_delivery_sent_at = CASE WHEN $1 = 'SENT' THEN now() ELSE NULL END
-        WHERE id = $2 AND used_at IS NULL AND revoked_at IS NULL`,
-      [delivery.status, tokenId]
-    );
-    await writeAudit(
-      client,
-      req,
-      "DISTRICT_ADMIN_SETUP_DELIVERY_ATTEMPTED",
-      "user",
-      user.id,
+          WHERE id = $2 AND used_at IS NULL AND revoked_at IS NULL`,
+        [delivery.status, tokenId]
+      );
+      await writeAudit(
+        client,
+        req,
+        "DISTRICT_ADMIN_SETUP_DELIVERY_ATTEMPTED",
+        "user",
+        user.id,
       { channel: "EMAIL", status: delivery.status }
-    );
+      );
     return deliveryStatus;
   });
 }
@@ -1788,11 +1918,11 @@ async function retryDistrictAdminSetupDelivery(actor, req, userId, channelValue)
     tokenId: setup.tokenId,
     req,
   });
-  return {
-    channel: channel.toLowerCase(),
+    return {
+      channel: channel.toLowerCase(),
     delivery_status: deliveryStatus.email.status,
     message: deliveryStatus.email.message,
-  };
+    };
 }
 
 async function completeDistrictAdminSetup(tokenValue, password, req) {

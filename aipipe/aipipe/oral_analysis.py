@@ -78,6 +78,19 @@ CLINICIAN_REVIEW_RECOMMENDATION = (
     "A Medical Officer must review the original image and clinical findings "
     "before making any decision."
 )
+CLINICAL_SCORE_UNAVAILABLE = (
+    "Clinical score unavailable — clinician assessment required."
+)
+VISUAL_HEALTH_SCORE_EXPLAINED = (
+    "Score calculated from the visual findings returned by the AI model."
+)
+VISUAL_HEALTH_SCORE_UNAVAILABLE = (
+    "Score Not Available – insufficient usable visual findings."
+)
+INSUFFICIENT_IMAGE_QUALITY = "Insufficient Image Quality"
+# Technical quality floor: below this, visual evidence is not reliable enough
+# for observation support (not a disease threshold).
+INSUFFICIENT_QUALITY_SCORE = 40
 
 
 class OralVisionModel(Protocol):
@@ -149,7 +162,7 @@ def inspect_image_quality(image: Image.Image) -> dict:
     if sharpness < 55:
         warnings_found.append("blur")
 
-    return {
+    quality = {
         "status": "RECAPTURE" if warnings_found else "ACCEPTABLE",
         "warnings": warnings_found,
         "metrics": {
@@ -160,6 +173,242 @@ def inspect_image_quality(image: Image.Image) -> dict:
         },
         "checker_version": "pillow-heuristics-v1",
     }
+    quality["score_report"] = compute_image_quality_score(quality)
+    return quality
+
+
+def compute_image_quality_score(quality: dict) -> dict:
+    """
+    Transparent technical Image Quality Score (0–100).
+
+    Validation basis (pillow-heuristics-v1, same gates as inspect_image_quality):
+    - resolution: min edge ≥ 480 and max edge ≥ 640
+    - lighting: mean luminance roughly 45–220
+    - focus/blur: Laplacian variance ≥ 55 on a downscaled luminance sample
+
+    This is NOT disease severity and NOT an overall clinical screening score.
+    """
+    metrics = quality.get("metrics") or {}
+    warnings_found = list(quality.get("warnings") or [])
+    width = int(metrics.get("width") or 0)
+    height = int(metrics.get("height") or 0)
+    brightness = float(metrics.get("brightness_mean") or 0.0)
+    sharpness = float(metrics.get("sharpness_variance") or 0.0)
+
+    criteria = []
+    total = 100
+
+    # --- Resolution ---
+    dim_penalty = 0
+    if width <= 0 or height <= 0 or "dimensions" in warnings_found or max(width, height) < 640 or min(width, height) < 480:
+        dim_penalty = 40 if min(width, height) < 320 else 25
+    total -= dim_penalty
+    criteria.append({
+        "criterion": "resolution",
+        "observed_evidence": f"{width}x{height} pixels",
+        "score_assigned": max(0, 100 - dim_penalty),
+        "reason": (
+            "Below the documented minimum capture size (max edge ≥ 640 and min edge ≥ 480)."
+            if dim_penalty
+            else "Meets the documented minimum capture size."
+        ),
+        "confidence": "high",
+        "limitations": "Size only; does not judge anatomical framing or occlusion.",
+    })
+
+    # --- Lighting ---
+    light_penalty = 0
+    if brightness < 45 or "dark" in warnings_found:
+        light_penalty = 40 if brightness < 20 else 25
+    elif brightness > 220 or "bright" in warnings_found:
+        light_penalty = 40 if brightness > 245 else 25
+    total -= light_penalty
+    if brightness < 45 or "dark" in warnings_found:
+        light_reason = "Mean luminance is below the usable screening range (< 45)."
+    elif brightness > 220 or "bright" in warnings_found:
+        light_reason = "Mean luminance is above the usable screening range (> 220)."
+    else:
+        light_reason = "Mean luminance is within the usable screening range (45–220)."
+    criteria.append({
+        "criterion": "lighting",
+        "observed_evidence": f"brightness_mean={round(brightness, 2)}",
+        "score_assigned": max(0, 100 - light_penalty),
+        "reason": light_reason,
+        "confidence": "high",
+        "limitations": "Global mean only; local glare or shadows may still hide features.",
+    })
+
+    # --- Focus / blur ---
+    blur_penalty = 0
+    if sharpness < 55 or "blur" in warnings_found:
+        if sharpness < 15:
+            blur_penalty = 45
+        elif sharpness < 55:
+            blur_penalty = 25 + int(round((55 - sharpness) / 55 * 20))
+        else:
+            blur_penalty = 25
+    total -= blur_penalty
+    criteria.append({
+        "criterion": "focus_blur",
+        "observed_evidence": f"sharpness_variance={round(sharpness, 2)}",
+        "score_assigned": max(0, 100 - blur_penalty),
+        "reason": (
+            "Laplacian variance is below the focus threshold (< 55)."
+            if blur_penalty
+            else "Laplacian variance meets the focus threshold (≥ 55)."
+        ),
+        "confidence": "medium",
+        "limitations": "Heuristic blur estimate; textured backgrounds can inflate sharpness.",
+    })
+
+    total = max(0, min(100, int(round(total))))
+    insufficient = (
+        total < INSUFFICIENT_QUALITY_SCORE
+        or quality.get("status") == "RECAPTURE"
+        or bool(warnings_found)
+    )
+
+    return {
+        "methodology": "pillow-heuristics-v1",
+        "status": "INSUFFICIENT" if insufficient else "SCORED",
+        "score": None if insufficient else total,
+        "raw_score": total,
+        "label": INSUFFICIENT_IMAGE_QUALITY if insufficient else None,
+        "criteria": criteria,
+        "limitations": (
+            "Technical capture quality only. Not disease severity. "
+            "Not a validated overall clinical screening score."
+        ),
+        "recommendation": CLINICIAN_REVIEW_RECOMMENDATION,
+    }
+
+
+def build_criterion_scores(findings: list[dict]) -> list[dict]:
+    """Per-feature appearance scores from model findings (0–3 / N/A). Not diagnosis."""
+    reports = []
+    for item in findings or []:
+        feature = item.get("feature")
+        scale = str(item.get("scale") if item.get("scale") is not None else "N/A")
+        reports.append({
+            "criterion": feature,
+            "observed_evidence": item.get("note") or FEATURE_LABELS.get(feature, feature),
+            "score_assigned": scale,
+            "reason": SCALE_LABELS.get(scale, scale),
+            "confidence": "low" if scale == "N/A" else "medium",
+            "limitations": (
+                "Appearance scale from vision-model JSON only; not clinically validated "
+                "as disease severity or probability."
+            ),
+        })
+    return reports
+
+
+def compute_visual_health_assessment_score(
+    findings: list[dict] | None,
+    *,
+    model_status: str,
+) -> dict:
+    """
+    Deterministic AI Visual Health Assessment Score (0–100) from model findings only.
+
+    Calculation (appearance aggregate — not clinical severity weights):
+    - Use only findings actually returned by the model (caller must not pass padded defaults).
+    - Usable scales: "0","1","2","3". "N/A" is unassessable and excluded.
+    - Remap each usable scale with the model's own 0–3 appearance ladder:
+        points = round((3 - scale) / 3 * 100)  →  0→100, 1→67, 2→33, 3→0
+    - Score = round(mean(points)) across usable findings.
+    - Equal weight per usable finding; no feature-specific clinical weights.
+    - Does not use observation_confidence, image quality, brightness, blur, or resolution.
+    - model_status must be OK; otherwise score is null.
+    - Missing / empty / only-N/A findings → null ("Score Not Available").
+
+    This is an experimental visual indicator only — not a diagnosis or disease-risk score.
+    """
+    unassessable = []
+    for item in findings or []:
+        scale = str(item.get("scale") if item.get("scale") is not None else "")
+        if scale == "N/A":
+            feature = item.get("feature")
+            unassessable.append({
+                "feature": feature,
+                "scale": scale,
+                "note": item.get("note"),
+                "description": FEATURE_LABELS.get(feature, feature),
+                "appearance": SCALE_LABELS.get(scale, scale),
+            })
+
+    empty = {
+        "visual_health_assessment_score": None,
+        "visual_health_assessment_score_message": VISUAL_HEALTH_SCORE_UNAVAILABLE,
+        "visual_health_assessment_score_reasons": [],
+        "visual_health_assessment_unassessable": unassessable,
+    }
+
+    if model_status != "OK":
+        return empty
+
+    points = []
+    reasons = []
+    for item in findings or []:
+        scale = str(item.get("scale") if item.get("scale") is not None else "")
+        if scale not in {"0", "1", "2", "3"}:
+            continue
+        feature = item.get("feature")
+        assigned = int(round((3 - int(scale)) / 3 * 100))
+        assigned = max(0, min(100, assigned))
+        points.append(assigned)
+        reasons.append({
+            "feature": feature,
+            "scale": scale,
+            "points": assigned,
+            "description": FEATURE_LABELS.get(feature, feature),
+            "appearance": SCALE_LABELS.get(scale, scale),
+            "note": item.get("note"),
+            "reason": (
+                f"{FEATURE_LABELS.get(feature, feature)}: "
+                f"{SCALE_LABELS.get(scale, scale)} → {assigned}/100"
+            ),
+        })
+
+    if not points:
+        return empty
+
+    score = int(round(sum(points) / len(points)))
+    score = max(0, min(100, score))
+    return {
+        "visual_health_assessment_score": score,
+        "visual_health_assessment_score_message": VISUAL_HEALTH_SCORE_EXPLAINED,
+        "visual_health_assessment_score_reasons": reasons,
+        "visual_health_assessment_unassessable": unassessable,
+    }
+
+
+def calibrate_observation_confidence(
+    raw_confidence: int | None,
+    quality_report: dict,
+    model_status: str,
+    findings: list[dict],
+) -> int | None:
+    """
+    Cap model confidence by technical image quality and finding assessability.
+    Never invents a fixed 100; never turns quality failures into high confidence.
+    """
+    if quality_report.get("status") == "INSUFFICIENT":
+        return None
+    if raw_confidence is None:
+        return None
+    if model_status in {"NOT_ASSESSABLE", "INVALID_OUTPUT"}:
+        return min(int(raw_confidence), 30)
+
+    quality_ceiling = quality_report.get("score")
+    if quality_ceiling is None:
+        return None
+
+    capped = min(int(raw_confidence), int(quality_ceiling))
+    na_count = sum(1 for item in findings or [] if str(item.get("scale")) == "N/A")
+    if na_count:
+        capped = min(capped, max(0, 100 - na_count * 12))
+    return max(0, min(100, int(capped)))
 
 
 def _laplacian_variance(sample: Image.Image) -> float:
@@ -319,6 +568,8 @@ def validate_ai_result(result: dict, *, view: str = "FRONT_VIEW", category: str 
         observations = _text_list(result.get("observations"), "observations")
         abnormalities = _text_list(result.get("abnormalities"), "abnormalities")
         model_status = "NOT_ASSESSABLE" if classification == "UNCERTAIN" else "OK"
+        # Legacy payloads have no structured findings — score cannot be calculated.
+        visual_score = compute_visual_health_assessment_score([], model_status=model_status)
         return {
             "view": view,
             "selected_category": selected_category,
@@ -332,6 +583,7 @@ def validate_ai_result(result: dict, *, view: str = "FRONT_VIEW", category: str 
             "observations": observations,
             "abnormalities": abnormalities,
             "recommendation": CLINICIAN_REVIEW_RECOMMENDATION,
+            **visual_score,
         }
 
     model_status = str(result.get("model_status") or "").strip().upper()
@@ -350,6 +602,9 @@ def validate_ai_result(result: dict, *, view: str = "FRONT_VIEW", category: str 
     seen = {item["feature"] for item in findings}
     if len(seen) != len(findings):
         raise ValueError("possible_visual_findings contains duplicate features.")
+
+    # Score from model-returned findings only — never treat padded defaults as healthy.
+    visual_score = compute_visual_health_assessment_score(findings, model_status=model_status)
 
     not_assessable_reason = result.get("not_assessable_reason")
     if model_status == "NOT_ASSESSABLE":
@@ -391,6 +646,7 @@ def validate_ai_result(result: dict, *, view: str = "FRONT_VIEW", category: str 
         "observations": observations,
         "abnormalities": abnormalities,
         "recommendation": CLINICIAN_REVIEW_RECOMMENDATION,
+        **visual_score,
     }
 
 
@@ -424,6 +680,10 @@ Required JSON shape:
 
 Rules:
 - observation_confidence must be a JSON integer from 0 to 100 (not a decimal or string).
+- observation_confidence is how clearly THIS image supports your observations.
+  Use lower values when blur, poor lighting, occlusion, or incomplete anatomy reduce certainty.
+  Do not default to 100. Reserve 90–100 only when the image is sharp, well lit, and the
+  category anatomy is fully visible.
 - scale must be exactly one of: "0", "1", "2", "3", "N/A".
   0 = Not observed, 1 = Mild appearance, 2 = Moderate appearance,
   3 = Prominent appearance, N/A = Cannot assess.
@@ -432,6 +692,7 @@ Rules:
 - When model_status is NOT_ASSESSABLE, set not_assessable_reason to a short reason and
   you may return an empty possible_visual_findings list.
 - Only mark a feature 1/2/3 when that feature is actually visible.
+- Do not invent findings that are not visible.
 """.strip()
 
 

@@ -8,7 +8,7 @@ import React, {
 } from "react";
 import api, { clearSession, getAuthMode, setAuthMode, storeSession } from "../services/api";
 import { clearServiceWorkerCaches } from "../pwa/registerServiceWorker";
-import { countPendingDrafts } from "../offline/drafts";
+import { countPendingDrafts, countUnsyncedDrafts } from "../offline/drafts";
 import {
   enableOfflineVault,
   getVaultPublic,
@@ -209,7 +209,8 @@ export function AuthProvider({ children }) {
   };
 
   const logout = async ({ force = false } = {}) => {
-    const count = user?.id ? await countPendingDrafts(user.id) : 0;
+    // Warn for any unsynced row, including incomplete local drafts
+    const count = user?.id ? await countUnsyncedDrafts(user.id) : 0;
     if (!force && count > 0) {
       return { needsConfirm: true, pendingCount: count };
     }

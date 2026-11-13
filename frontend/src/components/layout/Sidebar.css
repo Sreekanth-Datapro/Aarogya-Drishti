@@ -1,7 +1,9 @@
 /* Deep Forest Green Sidebar Styling */
 .admin-sidebar {
   position: fixed;
-  inset: 0 auto 0 0;
+  /* Top offset comes from --connectivity-banner-height so the logo is never under banners */
+  inset: var(--connectivity-banner-height, 0px) auto 0 0;
+  height: auto;
   z-index: 30;
   width: var(--sidebar-width);
   display: flex;

@@ -271,7 +271,10 @@ export default function SpecialistCareLifecycle() {
             <Link className="btn btn-secondary" to={`/specialist/tracking/${selected.patient_id}`}>
               {t("care.viewTimeline")}
             </Link>
-            <Link className="btn btn-secondary" to="/specialist/diagnostics">
+            <Link
+              className="btn btn-secondary"
+              to={`/specialist/diagnostics?patient_id=${encodeURIComponent(selected.patient_id)}`}
+            >
               {t("care.diagnostics")}
             </Link>
             {selected.status !== "CLOSED" && selected.status !== "SUPERSEDED" && (

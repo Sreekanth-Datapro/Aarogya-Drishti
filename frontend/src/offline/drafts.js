@@ -2,7 +2,7 @@
  * Encrypted offline patient registration drafts (outbox).
  * Never claims the server accepted a registration until sync confirms it.
  */
-import { DRAFT_STATUS } from "./constants";
+import { DRAFT_STATUS, SYNC_ELIGIBLE_STATUSES } from "./constants";
 import { decryptJson, encryptJson } from "./crypto";
 import {
   draftDelete,
@@ -10,6 +10,10 @@ import {
   draftPut,
   draftsByUser,
 } from "./db";
+
+export function isSyncEligibleStatus(status) {
+  return SYNC_ELIGIBLE_STATUSES.includes(status);
+}
 
 function requirePin(pin) {
   if (!pin) throw new Error("OFFLINE_PIN_REQUIRED");
@@ -60,11 +64,16 @@ export async function listRegistrationDrafts(userId) {
     .sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)));
 }
 
+/** Count of drafts waiting for (or mid) server sync — excludes incomplete local drafts. */
 export async function countPendingDrafts(userId) {
   const rows = await draftsByUser(String(userId));
-  return rows.filter((row) =>
-    [DRAFT_STATUS.PENDING, DRAFT_STATUS.FAILED, DRAFT_STATUS.NEEDS_CONFIRMATION, DRAFT_STATUS.SYNCING].includes(row.status)
-  ).length;
+  return rows.filter((row) => isSyncEligibleStatus(row.status)).length;
+}
+
+/** All unsynced rows including incomplete local drafts (logout / disable warnings). */
+export async function countUnsyncedDrafts(userId) {
+  const rows = await draftsByUser(String(userId));
+  return rows.filter((row) => row.status !== DRAFT_STATUS.SYNCED).length;
 }
 
 export async function loadDraftPayload(pin, idempotencyKey) {

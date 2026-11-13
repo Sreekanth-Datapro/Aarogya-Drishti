@@ -226,7 +226,18 @@ async function listAppointments(userId, query = {}) {
                WHERE video.referral_id = referral.id
                  AND video.patient_id = appointment.patient_id
                  AND video.is_active IS TRUE
-            ) AS has_active_video_consultation
+            ) AS has_active_video_consultation,
+            EXISTS (
+              SELECT 1
+                FROM tbl_specialist_consultation_decisions decision
+               WHERE decision.referral_id = referral.id
+                 AND decision.patient_id = appointment.patient_id
+                 AND decision.specialist_id = referral.assigned_specialist_id
+                 AND decision.signed_by = referral.assigned_specialist_id
+                 AND decision.signed_at IS NOT NULL
+                 AND decision.status = 'SIGNED'
+                 AND decision.decision_type = 'VIDEO_CONSULTATION'
+            ) AS signed_video_decision
        FROM tbl_hospital_appointments appointment
        JOIN tbl_patients patient ON patient.id = appointment.patient_id AND patient.deleted_at IS NULL
        JOIN tbl_referrals referral ON referral.id = appointment.referral_id
@@ -336,7 +347,18 @@ async function lockAuthorizedAppointment(client, userId, id) {
                WHERE video.referral_id = referral.id
                  AND video.patient_id = appointment.patient_id
                  AND video.is_active IS TRUE
-            ) AS has_active_video_consultation
+            ) AS has_active_video_consultation,
+            EXISTS (
+              SELECT 1
+                FROM tbl_specialist_consultation_decisions decision
+               WHERE decision.referral_id = referral.id
+                 AND decision.patient_id = appointment.patient_id
+                 AND decision.specialist_id = referral.assigned_specialist_id
+                 AND decision.signed_by = referral.assigned_specialist_id
+                 AND decision.signed_at IS NOT NULL
+                 AND decision.status = 'SIGNED'
+                 AND decision.decision_type = 'VIDEO_CONSULTATION'
+            ) AS signed_video_decision
        FROM tbl_hospital_appointments appointment
        JOIN tbl_referrals referral ON referral.id = appointment.referral_id
        JOIN mst_appointment_statuses status ON status.id = appointment.status_id
@@ -355,11 +377,13 @@ function rejectVideoHospitalAppointment(appointment) {
     .trim()
     .toUpperCase()
     .replace(/[\s-]+/g, "_");
+  const labeledVideo = service.includes("VIDEO_CONSULTATION") || service.includes("VIDEO_CONSULT");
+  // BOTH referrals may carry a video-looking service label before the Specialist
+  // signs VIDEO_CONSULTATION. Until then Hospital Staff may confirm the hospital visit.
   if (
     appointment.has_active_video_consultation
     || appointment.referral_mode === "VIDEO_CONSULT"
-    || service.includes("VIDEO_CONSULTATION")
-    || service.includes("VIDEO_CONSULT")
+    || (labeledVideo && appointment.signed_video_decision === true)
   ) {
     throw new HttpError(
       409,
@@ -480,46 +504,20 @@ async function confirmAppointment(userId, req, id) {
   });
 }
 
+// Legacy confirm bypassed the mandatory workflow:
+// availability request → Specialist ACCEPT/SUGGEST → Hospital Staff final confirm.
+// Keep the route for auth/RBAC compatibility, but never confirm from this path.
 async function confirmVideoConsultation(userId, req, id) {
+  requireUuid(id, "Invalid video consultation ID");
+  // Still enforce facility scope so unauthorized IDs do not leak as a generic bypass error.
   return withTransaction(pool, async (client) => {
     await setActor(client, userId);
-    const consultation = await lockAuthorizedVideoConsultation(client, userId, id);
-    if (!["REQUESTED", "RESCHEDULED"].includes(consultation.status_code)) {
-      throw new HttpError(409, "Only requested video consultations can be confirmed", "INVALID_APPOINTMENT_TRANSITION");
-    }
-    assertAssignedVideoSpecialist(consultation);
-    await assertActiveTeleconsultConsent(client, consultation.patient_id);
-    if (consultation.availability_status !== "RESERVED") {
-      throw new HttpError(409, "The assigned Specialist slot is no longer available", "CONSULTATION_SLOT_UNAVAILABLE");
-    }
-
-    const confirmedId = await statusId(client, "CONFIRMED");
-    const { rows } = await client.query(
-      `UPDATE tbl_video_consultations
-          SET status_id = $2
-        WHERE id = $1 AND is_active IS TRUE AND slot_id = $3
-        RETURNING id, slot_id, status_id, attendance::text AS attendance`,
-      [consultation.id, confirmedId, consultation.slot_id]
+    await lockAuthorizedVideoConsultation(client, userId, id);
+    throw new HttpError(
+      409,
+      "Video consultations must be confirmed from an accepted Specialist availability request",
+      "VIDEO_AVAILABILITY_CONFIRMATION_REQUIRED"
     );
-    if (!rows.length) {
-      throw new HttpError(409, "The video consultation request changed before confirmation", "INVALID_APPOINTMENT_TRANSITION");
-    }
-    await client.query(
-      `INSERT INTO tbl_appointment_status_history
-         (video_consultation_id, from_status_id, to_status_id, changed_by, reason)
-       VALUES ($1, $2, $3, $4, 'Video consultation confirmed by Hospital Staff')`,
-      [consultation.id, consultation.status_id, confirmedId, userId]
-    );
-    await audit(req, {
-      client,
-      required: true,
-      event: "HOSPITAL_VIDEO_CONSULTATION_CONFIRMED",
-      resourceType: "video_consultation",
-      resourceId: consultation.id,
-      patientId: consultation.patient_id,
-      metadata: { slot_id: consultation.slot_id },
-    });
-    return { ...rows[0], status_code: "CONFIRMED" };
   });
 }
 

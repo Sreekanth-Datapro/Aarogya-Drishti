@@ -71,11 +71,12 @@ function canEnrollMfaForPendingDistrictAdmin(user) {
     && !user.mfa_enabled;
 }
 
-// Staff accounts with a temporary password can only continue by choosing a new password.
+// Accounts issued a temporary password can only continue by choosing a new password.
+// Includes clinical staff, District Admin setup, and custom-role accounts created by admins.
 function isTemporaryPasswordLogin(user) {
-  return user.status === "PENDING_SETUP"
-    && ["DISTRICT_ADMIN", "MEDICAL_OFFICER", "SPECIALIST", "NAVIGATOR", "HOSPITAL_STAFF"].includes(user.role_name)
-    && user.must_change_password;
+  if (user.status !== "PENDING_SETUP" || !user.must_change_password) return false;
+  if (["SUPER_ADMIN", "SYSTEM_ADMIN", "MIGRATION"].includes(user.role_name)) return false;
+  return Boolean(user.role_name);
 }
 
 // The temporary password works for 24 hours; the limit is kept in the open

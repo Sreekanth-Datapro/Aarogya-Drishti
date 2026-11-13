@@ -510,6 +510,14 @@
   cursor: not-allowed;
 }
 
+.role-matrix-action-na {
+  display: inline-block;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+
 .role-matrix-note {
   display: flex;
   align-items: flex-start;

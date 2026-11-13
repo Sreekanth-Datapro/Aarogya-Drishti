@@ -39,7 +39,11 @@ export default function DiagnosticOrders({ role }) {
       ? "/navigator/diagnostics"
       : role === "SPECIALIST"
         ? "/specialist/diagnostics"
-        : "/medical-officer/diagnostics";
+        : role === "HOSPITAL_STAFF"
+          ? "/hospital-staff/diagnostics/orders"
+          : role === "HEALTH_WORKER"
+            ? "/health-worker/diagnostics/orders"
+            : "/medical-officer/diagnostics";
 
   const [orders, setOrders] = useState([]);
   const [patients, setPatients] = useState([]);
@@ -52,6 +56,7 @@ export default function DiagnosticOrders({ role }) {
   const [message, setMessage] = useState("");
 
   const [patientId, setPatientId] = useState(searchParams.get("patient_id") || "");
+  const [listFilter, setListFilter] = useState(searchParams.get("filter") || "");
   const [referralId, setReferralId] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [selectedTestIds, setSelectedTestIds] = useState([]);
@@ -63,10 +68,28 @@ export default function DiagnosticOrders({ role }) {
   const [notes, setNotes] = useState("");
   const [idempotencyKey, setIdempotencyKey] = useState(newIdempotencyKey());
 
+  // Keep list scoped when arriving from care plan / patient detail with ?patient_id=
+  useEffect(() => {
+    const fromUrl = searchParams.get("patient_id") || "";
+    setPatientId((current) => (current === fromUrl ? current : fromUrl));
+  }, [searchParams]);
+
   const selectedPatient = useMemo(
     () => patients.find((row) => row.id === patientId) || null,
     [patients, patientId]
   );
+
+  const scopedPatientLabel = useMemo(() => {
+    if (!patientId) return "";
+    if (selectedPatient) {
+      return `${selectedPatient.full_name || ""} (${selectedPatient.patient_code || patientId})`.trim();
+    }
+    const fromOrder = orders.find((order) => order.patient_id === patientId);
+    if (fromOrder) {
+      return `${fromOrder.patient_name || ""} (${fromOrder.patient_code || patientId})`.trim();
+    }
+    return patientId;
+  }, [patientId, selectedPatient, orders]);
 
   const filteredTests = useMemo(() => {
     if (!categoryId) return tests;
@@ -78,8 +101,9 @@ export default function DiagnosticOrders({ role }) {
     setError("");
     try {
       const params = { page_size: 50 };
-      if (role === "NAVIGATOR") params.pending_only = "true";
+      if (role === "NAVIGATOR" && !listFilter) params.pending_only = "true";
       if (patientId) params.patient_id = patientId;
+      if (listFilter) params.filter = listFilter;
       const response = await api.get("/diagnostics/orders", { params });
       setOrders(response.data.orders || []);
     } catch (requestError) {
@@ -87,7 +111,7 @@ export default function DiagnosticOrders({ role }) {
     } finally {
       setLoading(false);
     }
-  }, [role, patientId]);
+  }, [role, patientId, listFilter]);
 
   const loadMasters = useCallback(async () => {
     if (!canPrescribe) return;
@@ -225,6 +249,51 @@ export default function DiagnosticOrders({ role }) {
 
       {error && <Alert type="error">{error}</Alert>}
       {message && <Alert type="success">{message}</Alert>}
+
+      {(role === "SPECIALIST" || role === "NAVIGATOR" || role === "HEALTH_WORKER") && (
+        <div className="navigator-filters" style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+          {[
+            { value: "", label: t("diagnostics.filterAll") },
+            { value: "followup_due", label: t("diagnostics.filterFollowupDue") },
+            { value: "followup_overdue", label: t("diagnostics.filterFollowupOverdue") },
+            { value: "followup_report_submitted", label: t("diagnostics.filterFollowupSubmitted") },
+            { value: "reassessment_pending", label: t("diagnostics.filterReassessment") },
+            { value: "followup_required", label: t("diagnostics.filterFollowupRequired") },
+            { value: "closed", label: t("diagnostics.filterClosed") },
+          ].map((item) => (
+            <Button
+              key={item.value || "all"}
+              type="button"
+              size="sm"
+              variant={listFilter === item.value ? "primary" : "secondary"}
+              onClick={() => {
+                setListFilter(item.value);
+                const next = new URLSearchParams(searchParams);
+                if (item.value) next.set("filter", item.value);
+                else next.delete("filter");
+                setSearchParams(next, { replace: true });
+              }}
+            >
+              {item.label}
+            </Button>
+          ))}
+        </div>
+      )}
+
+      {patientId && (
+        <Alert type="info">
+          {t("diagnostics.filteredToPatient", { patient: scopedPatientLabel })}
+          {" "}
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => onPatientChange("")}
+            style={{ marginLeft: "0.5rem" }}
+          >
+            {t("diagnostics.clearPatientFilter")}
+          </button>
+        </Alert>
+      )}
 
       <div className="diagnostics-stat-grid">
         <StatCard icon={Microscope} label={t("diagnostics.statOrders")} value={String(orders.length)} />

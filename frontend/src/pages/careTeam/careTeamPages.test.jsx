@@ -8,6 +8,8 @@ jest.mock("../../services/api", () => ({
   default: { get: jest.fn(), post: jest.fn(), patch: jest.fn(), put: jest.fn(), delete: jest.fn() },
   storeSession: jest.fn(),
   clearSession: () => global.sessionStorage.clear(),
+  getAuthMode: jest.fn(() => "online"),
+  setAuthMode: jest.fn(),
 }));
 
 const USERS = {
@@ -525,6 +527,7 @@ test("the Specialist can sign a video decision without creating a consultation o
     expect(await screen.findByText("Active")).toBeInTheDocument();
     fireEvent.click(await screen.findByRole("button", { name: "Video consultation" }));
     expect(await screen.findByText(/Signing records your clinical decision only/)).toBeInTheDocument();
+    expect(screen.queryByText(/Video consultation requires active TELECONSULT consent/)).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Clinical reason"), { target: { value: "Synthetic clinical reason" } });
     fireEvent.change(screen.getByLabelText("Clinical recommendation"), { target: { value: "Remote review recommended" } });
     fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
@@ -689,7 +692,8 @@ test("video sign-off requires active consent but does not require an existing sl
   expect(await screen.findByText(/Video consultation requires active TELECONSULT consent/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Submit clinical decision" }));
 
-  expect((await screen.findAllByText(/Video consultation requires active TELECONSULT consent/))).toHaveLength(2);
+  // One alert only — do not duplicate the same consent message as a second field error.
+  expect(screen.getAllByText(/Video consultation requires active TELECONSULT consent/)).toHaveLength(1);
   expect(api.get).not.toHaveBeenCalledWith(
     `/specialist/referrals/${referral.id}/consultation-slots`
   );

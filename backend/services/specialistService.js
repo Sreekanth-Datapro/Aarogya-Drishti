@@ -1220,6 +1220,7 @@ module.exports = {
   getInvestigationReportFile,
   getAvailableConsultationSlots,
   createConsultation,
+  createConsultationForReferral,
   getAssignedHospitals,
   listAvailabilitySlots,
   createAvailabilitySlot,

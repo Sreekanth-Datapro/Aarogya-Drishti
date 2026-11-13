@@ -5,6 +5,7 @@
 import api from "../services/api";
 import { DRAFT_STATUS } from "./constants";
 import {
+  isSyncEligibleStatus,
   listRegistrationDrafts,
   loadDraftPayload,
   removeDraft,
@@ -40,6 +41,8 @@ export async function syncPendingRegistrations({ pin, userId, confirmMap = {} })
     const drafts = await listRegistrationDrafts(userId);
     for (const draft of drafts) {
       if (draft.status === DRAFT_STATUS.SYNCED) continue;
+      // Incomplete local drafts must be finished by the Health Worker first.
+      if (!isSyncEligibleStatus(draft.status)) continue;
 
       await updateDraftStatus(draft.idempotency_key, DRAFT_STATUS.SYNCING);
       try {

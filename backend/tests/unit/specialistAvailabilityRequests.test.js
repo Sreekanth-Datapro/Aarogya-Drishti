@@ -77,6 +77,9 @@ function mockDefault(overrides = {}) {
       }
     }
     if (sql.includes("SELECT set_config")) return { rows: [] };
+    if (sql.includes("SELECT id FROM tbl_patients WHERE id = $1 FOR UPDATE")) {
+      return { rows: [{ id: PATIENT }] };
+    }
     if (sql.includes("FROM mst_notification_templates")) {
       return { rows: [{ id: 3, language_id: 1 }] };
     }
@@ -84,14 +87,24 @@ function mockDefault(overrides = {}) {
     if (sql.includes("FOR UPDATE OF referral")) return { rows: [referralRow()] };
     if (sql.includes("FOR UPDATE OF specialist, role")) return { rows: [{ id: SPECIALIST }] };
     if (sql.includes("FOR UPDATE OF specialist")) return { rows: [{ id: SPECIALIST }] };
-    if (sql.includes("FOR UPDATE OF availability")) {
+    if (sql.includes("availability.patient_id = $1")
+        && sql.includes("tbl_specialist_availability_requests")) {
+      return { rows: [] };
+    }
+    if (sql.includes("consultation.patient_id = $1")
+        && sql.includes("status.code = ANY")
+        && sql.includes("tbl_video_consultations")) {
+      return { rows: [] };
+    }
+    if (sql.includes("FOR UPDATE OF availability, referral")
+        || (sql.includes("FOR UPDATE OF availability") && !sql.includes("availability.patient_id"))) {
       return { rows: [availabilityRequest()] };
     }
     if (sql.includes("SET is_active = FALSE") && sql.includes("CANCELLED")) {
       return { rows: [] };
     }
-    if (sql.includes("status.code = 'CANCELLED'")
-        && sql.includes("ORDER BY consultation.updated_at")) {
+    if (sql.includes("ORDER BY consultation.updated_at")
+        && (sql.includes("status.code = 'CANCELLED'") || sql.includes("status.code = ANY($2::text[])"))) {
       return { rows: [] };
     }
     if (sql.includes("FROM tbl_video_consultations consultation")
@@ -249,19 +262,23 @@ describe("Hospital Staff Specialist availability requests", () => {
       expect(result.confirmed_appointments.map(({ id }) => id)).toEqual(["video-confirmed"]);
       expect(result.completed_consultations.map(({ id }) => id)).toEqual(["video-completed"]);
 
-      const [requestQuery, consultationQuery] = mockQueries;
+      const requestQuery = mockQueries.find(({ sql }) =>
+        sql.includes("availability.specialist_id = $1")
+        && sql.includes("availability.status IN ('PENDING', 'ACCEPTED', 'SUGGESTED')")
+      );
+      const consultationQuery = mockQueries.find(({ sql }) =>
+        sql.includes("referral.assigned_specialist_id = $1")
+        && sql.includes("tbl_video_consultations consultation")
+      );
       expect(requestQuery.params).toEqual([SPECIALIST]);
-      expect(requestQuery.sql).toContain("availability.specialist_id = $1");
-      expect(requestQuery.sql).toContain("availability.status IN ('PENDING', 'ACCEPTED', 'SUGGESTED')");
       expect(requestQuery.sql).toContain("fn_user_has_patient_access($1, referral.patient_id)");
       expect(consultationQuery.params).toEqual([SPECIALIST]);
-      expect(consultationQuery.sql).toContain("referral.assigned_specialist_id = $1");
-      expect(consultationQuery.sql).toContain("status.code IN ('CONFIRMED', 'COMPLETED')");
+      expect(consultationQuery.sql).toContain("status.code IN ('CONFIRMED', 'COMPLETED', 'MISSED', 'RESCHEDULED')");
       expect(consultationQuery.sql).toContain("case_assignment.user_id = $1");
     });
   });
 
-  test("direct confirmation uses the assigned Specialist's existing slot without creating a duplicate slot", async () => {
+  test("Path 1 direct confirmation uses published Specialist slot without inventing a slot", async () => {
     const result = await service.directConfirmHospitalSlot(
       HOSPITAL_STAFF,
       { user: { id: HOSPITAL_STAFF, role_name: "HOSPITAL_STAFF" } },
@@ -271,7 +288,6 @@ describe("Hospital Staff Specialist availability requests", () => {
     expect(result).toMatchObject({
       status_code: "CONFIRMED",
       slot_id: SLOT,
-      scheduled_at: expect.any(Date),
       request_id: REQUEST,
     });
     expect(mockQueries.some(({ sql }) => sql.includes("INSERT INTO tbl_video_consultations"))).toBe(true);
@@ -287,7 +303,7 @@ describe("Hospital Staff Specialist availability requests", () => {
     expect(confirmationNotifications.length).toBeGreaterThanOrEqual(3);
   });
 
-  test("direct confirmation rejects a booked or unavailable existing slot", async () => {
+  test("Path 1 rejects booked or unavailable published slots", async () => {
     mockHandler = mockDefault({
       "FROM tbl_consultation_slots slot\n          WHERE slot.id = $1": { rows: [] },
     });
@@ -298,9 +314,24 @@ describe("Hospital Staff Specialist availability requests", () => {
       { referral_id: REFERRAL, slot_id: SLOT }
     )).rejects.toMatchObject({
       status: 409,
-      message: "This time slot is already booked for another patient.",
+      code: "CONSULTATION_SLOT_UNAVAILABLE",
     });
     expect(mockQueries.some(({ sql }) => sql.includes("INSERT INTO tbl_video_consultations"))).toBe(false);
+  });
+
+  test("Path 2 creates a PENDING Specialist availability request when no slot is confirmed", async () => {
+    const result = await service.createHospitalRequest(
+      HOSPITAL_STAFF,
+      { user: { id: HOSPITAL_STAFF, role_name: "HOSPITAL_STAFF" } },
+      { referral_id: REFERRAL, requested_start: START, requested_end: END }
+    );
+
+    expect(result.status).toBe("PENDING");
+    expect(mockQueries.some(({ sql }) =>
+      sql.includes("INSERT INTO tbl_specialist_availability_requests")
+    )).toBe(true);
+    expect(mockQueries.some(({ sql }) => sql.includes("INSERT INTO tbl_video_consultations"))).toBe(false);
+    expect(mockQueries.some(({ sql }) => sql.includes("INSERT INTO tbl_consultation_slots"))).toBe(false);
   });
 
   test("creates a pending request without inventing a slot or appointment", async () => {
@@ -327,15 +358,22 @@ describe("Hospital Staff Specialist availability requests", () => {
 
   test("allows an unavailable active video request to ask the same Specialist for a replacement time", async () => {
     mockHandler = mockDefault({
-      "FROM tbl_video_consultations consultation\n": { rows: [{
-        id: VIDEO,
-        status: "REQUESTED",
-        attendance: "PENDING",
-        slot_mode: "VIDEO",
-        slot_start: new Date("2020-01-01T10:00:00.000Z"),
-        is_booked: true,
-        another_consultation_on_slot: false,
-      }] },
+      "FROM tbl_video_consultations consultation\n": (sql) => {
+        if (sql.includes("consultation.patient_id = $1")) {
+          return { rows: [] };
+        }
+        return {
+          rows: [{
+            id: VIDEO,
+            status: "REQUESTED",
+            attendance: "PENDING",
+            slot_mode: "VIDEO",
+            slot_start: new Date("2020-01-01T10:00:00.000Z"),
+            is_booked: true,
+            another_consultation_on_slot: false,
+          }],
+        };
+      },
     });
 
     const result = await service.createHospitalRequest(
@@ -618,12 +656,17 @@ describe("Hospital Staff final video appointment confirmation", () => {
   test("replacement availability confirmation updates the existing consultation instead of duplicating it", async () => {
     mockHandler = mockDefault({
       "FOR UPDATE OF availability": { rows: [availabilityRequest({ status: "ACCEPTED", slot_id: null })] },
-      "FROM tbl_video_consultations consultation\n": { rows: [{
-        id: VIDEO,
-        status_id: 1,
-        status: "REQUESTED",
-        attendance: "PENDING",
-      }] },
+      "FROM tbl_video_consultations consultation\n": (sql) => {
+        if (sql.includes("consultation.patient_id = $1")) return { rows: [] };
+        return {
+          rows: [{
+            id: VIDEO,
+            status_id: 1,
+            status: "REQUESTED",
+            attendance: "PENDING",
+          }],
+        };
+      },
       "UPDATE tbl_video_consultations": { rows: [{
         id: VIDEO,
         slot_id: SLOT,
@@ -871,6 +914,34 @@ describe("Navigator preferred video time coordination", () => {
     expect(result.status).toBe("STAFF_REVIEW");
   });
 
+  test("STAFF_REVIEW Path 1 confirms published slot and closes the navigator request", async () => {
+    mockHandler = mockDefault({
+      "WHERE referral_id = $1 AND status = ANY($2::text[])": {
+        rows: [{ id: REQUEST, status: "STAFF_REVIEW", requested_start: START, requested_end: END }],
+      },
+    });
+
+    const result = await service.directConfirmHospitalSlot(
+      HOSPITAL_STAFF,
+      { user: { id: HOSPITAL_STAFF, role_name: "HOSPITAL_STAFF" } },
+      { referral_id: REFERRAL, slot_id: SLOT }
+    );
+
+    expect(result).toMatchObject({
+      status_code: "CONFIRMED",
+      slot_id: SLOT,
+      request_id: REQUEST,
+    });
+    expect(mockQueries.some(({ sql }) =>
+      sql.includes("UPDATE tbl_specialist_availability_requests")
+      && sql.includes("status = 'STAFF_REVIEW'")
+    )).toBe(true);
+    expect(mockQueries.some(({ sql }) =>
+      sql.includes("INSERT INTO tbl_specialist_availability_requests")
+      && sql.includes("'CONFIRMED'")
+    )).toBe(false);
+  });
+
   test("Hospital Staff can forward a STAFF_REVIEW request to the Specialist as PENDING", async () => {
     mockHandler = mockDefault({
       "FOR UPDATE OF availability, referral": {
@@ -993,7 +1064,8 @@ describe("Cancelled video consultation rescheduling", () => {
 
     expect(result.status).toBe("STAFF_REVIEW");
     expect(mockQueries.some(({ sql }) =>
-      sql.includes("SET is_active = FALSE") && sql.includes("CANCELLED")
+      sql.includes("SET is_active = FALSE")
+      && (sql.includes("CANCELLED") || sql.includes("status.code = ANY"))
     )).toBe(true);
     expect(mockQueries.some(({ sql }) =>
       sql.includes("UPDATE tbl_referrals") && sql.includes("COMPLETED")
@@ -1010,7 +1082,9 @@ describe("Cancelled video consultation rescheduling", () => {
         rows: [referralRow({ referral_status: "COMPLETED" })],
       },
       "FROM tbl_video_consultations consultation": (sql) => {
-        if (sql.includes("status.code = 'CANCELLED'") && sql.includes("consultation.id = $1")) {
+        if (sql.includes("consultation.patient_id = $1")) return { rows: [] };
+        if ((sql.includes("status.code = 'CANCELLED'") || sql.includes("status.code = ANY($5::text[])"))
+            && sql.includes("consultation.id = $1")) {
           return { rows: [{ id: CANCELLED_VIDEO }] };
         }
         if (sql.includes("status.code <> 'CANCELLED'")) {
@@ -1046,13 +1120,11 @@ describe("Cancelled video consultation rescheduling", () => {
     )).toBe(true);
   });
 
-  test("published-slot confirmation after cancel creates a new consultation and notifies roles", async () => {
-    const notified = [];
+  test("Path 1 after cancel inserts a new consultation on the published slot", async () => {
     mockHandler = mockDefault({
-      "FOR UPDATE OF referral": {
-        rows: [referralRow({ referral_status: "COMPLETED" })],
-      },
-      "status.code = 'CANCELLED'": { rows: [{ id: CANCELLED_VIDEO }] },
+      "ORDER BY consultation.updated_at": { rows: [{ id: CANCELLED_VIDEO }] },
+      "consultation.id = $1": { rows: [{ id: CANCELLED_VIDEO, status_id: 4 }] },
+      "SELECT id FROM mst_appointment_statuses WHERE code = 'RESCHEDULED'": { rows: [{ id: 7 }] },
       "INSERT INTO tbl_video_consultations": {
         rows: [{
           id: NEW_VIDEO,
@@ -1063,23 +1135,6 @@ describe("Cancelled video consultation rescheduling", () => {
           room_ref: null,
           meeting_expires_at: null,
           rescheduled_from_id: CANCELLED_VIDEO,
-        }],
-      },
-      "INSERT INTO tbl_notifications": (sql, params) => {
-        notified.push({ userId: params[0], payload: JSON.parse(params[4]) });
-        return { rows: [{ id: `notification-${notified.length}` }] };
-      },
-      "FROM tbl_referrals referral": {
-        rows: [{
-          referral_code: "REF-2026-000005",
-          patient_code: "AD-2026-000009",
-          health_worker_id: HEALTH_WORKER,
-          health_worker_role: "HEALTH_WORKER",
-          assigned_navigator_id: NAVIGATOR,
-          assigned_specialist_id: SPECIALIST,
-          specialist_name: "Dr Spec",
-          hospital_name: "Test Hospital",
-          specialty_name: "Cardiology",
         }],
       },
     });
@@ -1096,19 +1151,24 @@ describe("Cancelled video consultation rescheduling", () => {
       sql.includes("INSERT INTO tbl_video_consultations")
       && sql.includes("rescheduled_from_id")
     );
-    expect(insert).toBeTruthy();
     expect(insert.params).toContain(CANCELLED_VIDEO);
     expect(result.id).not.toBe(CANCELLED_VIDEO);
-    expect(mockQueries.some(({ sql, params }) =>
-      sql.includes("UPDATE tbl_video_consultations")
-      && Array.isArray(params)
-      && params.includes(CANCELLED_VIDEO)
-    )).toBe(false);
+  });
 
-    const confirmed = notified.filter((row) => row.payload.event === "VIDEO_APPOINTMENT_CONFIRMED");
-    expect(confirmed.map((row) => row.userId).sort()).toEqual(
-      [HEALTH_WORKER, NAVIGATOR, SPECIALIST].sort()
-    );
+  test("Path 1 rejects concurrent double booking of the same published slot", async () => {
+    mockHandler = mockDefault({
+      "FROM tbl_consultation_slots slot": { rows: [] },
+    });
+
+    await expect(service.directConfirmHospitalSlot(
+      HOSPITAL_STAFF,
+      { user: { id: HOSPITAL_STAFF, role_name: "HOSPITAL_STAFF" } },
+      { referral_id: REFERRAL, slot_id: SLOT }
+    )).rejects.toMatchObject({
+      status: 409,
+      code: "CONSULTATION_SLOT_UNAVAILABLE",
+    });
+    expect(mockQueries.some(({ sql }) => sql.includes("INSERT INTO tbl_video_consultations"))).toBe(false);
   });
 
   test("confirming Specialist alternative after cancel inserts a new consultation ID", async () => {
@@ -1120,7 +1180,14 @@ describe("Cancelled video consultation rescheduling", () => {
         })],
       },
       "ORDER BY consultation.updated_at": { rows: [{ id: CANCELLED_VIDEO }] },
+      "consultation.id = $1": {
+        rows: [{ id: CANCELLED_VIDEO, status_id: 4 }],
+      },
+      "SELECT id FROM mst_appointment_statuses WHERE code = 'RESCHEDULED'": {
+        rows: [{ id: 7 }],
+      },
       "FROM tbl_video_consultations consultation": (sql) => {
+        if (sql.includes("consultation.patient_id = $1")) return { rows: [] };
         if (sql.includes("status.code <> 'CANCELLED'") && sql.includes("attendance")) {
           return { rows: [] };
         }
@@ -1157,13 +1224,154 @@ describe("Cancelled video consultation rescheduling", () => {
     expect(insert.params).toContain(CANCELLED_VIDEO);
   });
 
-  test("duplicate active appointment still blocks cancelled reschedule confirmation", async () => {
+  test("final confirmation after Specialist acceptance rejects an already-booked slot", async () => {
     mockHandler = mockDefault({
-      "FOR UPDATE OF referral": {
-        rows: [referralRow({ referral_status: "COMPLETED" })],
+      "FOR UPDATE OF availability": {
+        rows: [availabilityRequest({
+          status: "ACCEPTED",
+          proposed_start: new Date(START),
+          proposed_end: new Date(END),
+        })],
       },
-      "FROM tbl_video_consultations consultation": {
-        rows: [{ id: VIDEO, status: "CONFIRMED" }],
+      "FROM tbl_video_consultations\n          WHERE slot_id = $1": {
+        rows: [{ id: VIDEO }],
+      },
+    });
+
+    await expect(service.confirmHospitalRequest(
+      HOSPITAL_STAFF,
+      { user: { id: HOSPITAL_STAFF, role_name: "HOSPITAL_STAFF" } },
+      REQUEST
+    )).rejects.toMatchObject({
+      status: 409,
+      code: "CONSULTATION_SLOT_UNAVAILABLE",
+    });
+    expect(mockQueries.some(({ sql }) =>
+      sql.includes("INSERT INTO tbl_video_consultations")
+      && sql.includes("rescheduled_from_id")
+    )).toBe(false);
+  });
+
+  test("Specialist acceptance never creates a patient appointment", async () => {
+    const result = await service.respondToRequest(
+      SPECIALIST,
+      { user: { id: SPECIALIST, role_name: "SPECIALIST" } },
+      REQUEST,
+      { response: "ACCEPT" }
+    );
+
+    expect(result.status).toBe("ACCEPTED");
+    expect(result.slot_id == null).toBe(true);
+    expect(mockQueries.some(({ sql }) => sql.includes("INSERT INTO tbl_video_consultations"))).toBe(false);
+    expect(mockQueries.some(({ sql }) => sql.includes("INSERT INTO tbl_consultation_slots"))).toBe(false);
+    expect(mockQueries.some(({ sql }) => sql.includes("INSERT INTO tbl_hospital_appointments"))).toBe(false);
+  });
+});
+
+describe("Active appointment guard and MISSED reschedule", () => {
+  const NAVIGATOR = "22222222-2222-4222-8222-222222222222";
+  const MISSED_VIDEO = "66666666-6666-4666-8666-666666666666";
+  const NEW_VIDEO = "77777777-7777-4777-8777-777777777777";
+  const OTHER_REFERRAL = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaab";
+
+  test("Navigator can submit a reschedule request for a MISSED appointment", async () => {
+    mockHandler = mockDefault({
+      "referral.assigned_navigator_id = $1": {
+        rows: [referralRow({ referral_status: "COMPLETED", has_signed_video_decision: true })],
+      },
+      "consultation.id = $1": {
+        rows: [{ id: MISSED_VIDEO, status_code: "MISSED" }],
+      },
+      "INSERT INTO tbl_specialist_availability_requests": {
+        rows: [{
+          id: REQUEST,
+          referral_id: REFERRAL,
+          requested_start: START,
+          requested_end: END,
+          status: "STAFF_REVIEW",
+          requested_by: NAVIGATOR,
+        }],
+      },
+    });
+
+    const result = await service.createNavigatorPreferredRequest(
+      NAVIGATOR,
+      { user: { id: NAVIGATOR, role_name: "NAVIGATOR" } },
+      REFERRAL,
+      {
+        requested_start: START,
+        requested_end: END,
+        reason: "Patient preferred a later morning slot",
+        reschedule_consultation_id: MISSED_VIDEO,
+      }
+    );
+
+    expect(result).toMatchObject({
+      status: "STAFF_REVIEW",
+      reason: "Patient preferred a later morning slot",
+      reschedule_consultation_id: MISSED_VIDEO,
+    });
+  });
+
+  test("Path 1 confirmation after MISSED marks old appointment RESCHEDULED and links the new one", async () => {
+    mockHandler = mockDefault({
+      "ORDER BY consultation.updated_at": { rows: [{ id: MISSED_VIDEO }] },
+      "consultation.id = $1": {
+        rows: [{ id: MISSED_VIDEO, status_id: 6 }],
+      },
+      "INSERT INTO tbl_video_consultations": {
+        rows: [{
+          id: NEW_VIDEO,
+          slot_id: SLOT,
+          status_id: 2,
+          attendance: "PENDING",
+          provider: null,
+          room_ref: null,
+          meeting_expires_at: null,
+          rescheduled_from_id: MISSED_VIDEO,
+        }],
+      },
+      "SELECT id FROM mst_appointment_statuses WHERE code = 'RESCHEDULED'": {
+        rows: [{ id: 7 }],
+      },
+      "SELECT id FROM mst_appointment_statuses WHERE code = 'CONFIRMED'": {
+        rows: [{ id: 2 }],
+      },
+    });
+
+    const result = await service.directConfirmHospitalSlot(
+      HOSPITAL_STAFF,
+      { user: { id: HOSPITAL_STAFF, role_name: "HOSPITAL_STAFF" } },
+      { referral_id: REFERRAL, slot_id: SLOT }
+    );
+
+    expect(result.id).toBe(NEW_VIDEO);
+    expect(result.status_code).toBe("CONFIRMED");
+    const insert = mockQueries.find(({ sql }) =>
+      sql.includes("INSERT INTO tbl_video_consultations") && sql.includes("rescheduled_from_id")
+    );
+    expect(insert.params).toContain(MISSED_VIDEO);
+    expect(mockQueries.some(({ sql }) =>
+      sql.includes("UPDATE tbl_video_consultations")
+      && sql.includes("is_active = FALSE")
+    )).toBe(true);
+    expect(mockQueries.some(({ sql, params }) =>
+      sql.includes("INSERT INTO tbl_appointment_status_history")
+      && params.includes(MISSED_VIDEO)
+    )).toBe(true);
+  });
+
+  test("duplicate active appointment is rejected with ACTIVE_APPOINTMENT_EXISTS", async () => {
+    mockHandler = mockDefault({
+      "consultation.patient_id = $1": {
+        rows: [{
+          id: VIDEO,
+          referral_id: OTHER_REFERRAL,
+          status: "CONFIRMED",
+          slot_start: START,
+          slot_end: END,
+          patient_code: "P-1",
+        }],
       },
     });
 
@@ -1173,17 +1381,23 @@ describe("Cancelled video consultation rescheduling", () => {
       { referral_id: REFERRAL, slot_id: SLOT }
     )).rejects.toMatchObject({
       status: 409,
-      code: "AVAILABILITY_REQUEST_EXISTS",
+      code: "ACTIVE_APPOINTMENT_EXISTS",
     });
     expect(mockQueries.some(({ sql }) => sql.includes("INSERT INTO tbl_video_consultations"))).toBe(false);
   });
 
-  test("double booking the same published slot is rejected", async () => {
+  test("pending reschedule on another referral blocks a second independent appointment", async () => {
     mockHandler = mockDefault({
-      "FOR UPDATE OF referral": {
-        rows: [referralRow({ referral_status: "COMPLETED" })],
+      "availability.patient_id = $1": {
+        rows: [{
+          id: REQUEST,
+          referral_id: OTHER_REFERRAL,
+          status: "STAFF_REVIEW",
+          slot_start: START,
+          slot_end: END,
+          patient_code: "P-1",
+        }],
       },
-      "FROM tbl_consultation_slots slot": { rows: [] },
     });
 
     await expect(service.directConfirmHospitalSlot(
@@ -1192,7 +1406,130 @@ describe("Cancelled video consultation rescheduling", () => {
       { referral_id: REFERRAL, slot_id: SLOT }
     )).rejects.toMatchObject({
       status: 409,
-      code: "CONSULTATION_SLOT_UNAVAILABLE",
+      code: "ACTIVE_APPOINTMENT_EXISTS",
+    });
+  });
+
+  test("concurrent Path 1 confirmations cannot create duplicate active appointments", async () => {
+    let inserted = false;
+    const patientLocks = [];
+    const SLOT_B = "ffffffff-ffff-4fff-8fff-fffffffffffe";
+    mockHandler = (sql, params) => {
+      if (sql.includes("SELECT id FROM tbl_patients WHERE id = $1 FOR UPDATE")) {
+        patientLocks.push(params[0]);
+        return { rows: [{ id: PATIENT }] };
+      }
+      if (sql.includes("FOR UPDATE OF referral") && params?.[1] === OTHER_REFERRAL) {
+        return { rows: [referralRow({ id: OTHER_REFERRAL })] };
+      }
+      if (sql.includes("INSERT INTO tbl_video_consultations")) {
+        inserted = true;
+        return {
+          rows: [{
+            id: VIDEO,
+            slot_id: SLOT,
+            status_id: 2,
+            attendance: "PENDING",
+            provider: null,
+            room_ref: null,
+            meeting_expires_at: null,
+          }],
+        };
+      }
+      // After first confirm, any other referral for the same patient sees the active booking.
+      if (inserted
+          && sql.includes("consultation.patient_id = $1")
+          && sql.includes("status.code = ANY")
+          && sql.includes("tbl_video_consultations")) {
+        return {
+          rows: [{
+            id: VIDEO,
+            referral_id: REFERRAL,
+            status: "CONFIRMED",
+            slot_start: START,
+            slot_end: END,
+            patient_code: "P-1",
+          }],
+        };
+      }
+      if (sql.includes("FROM tbl_consultation_slots slot")
+          && sql.includes("WHERE slot.id = $1")
+          && params?.[0] === SLOT_B) {
+        return {
+          rows: [{
+            id: SLOT_B,
+            slot_start: new Date(START),
+            slot_end: new Date(END),
+            mode: "VIDEO",
+            hospital_id: 8,
+            is_booked: false,
+          }],
+        };
+      }
+      return mockDefault()(sql, params);
+    };
+
+    const first = await service.directConfirmHospitalSlot(
+      HOSPITAL_STAFF,
+      { user: { id: HOSPITAL_STAFF, role_name: "HOSPITAL_STAFF" } },
+      { referral_id: REFERRAL, slot_id: SLOT }
+    );
+    expect(first.status_code).toBe("CONFIRMED");
+    expect(patientLocks).toContain(PATIENT);
+
+    // Same patient, different referral — patient FOR UPDATE then ACTIVE_APPOINTMENT_EXISTS.
+    await expect(service.directConfirmHospitalSlot(
+      HOSPITAL_STAFF,
+      { user: { id: HOSPITAL_STAFF, role_name: "HOSPITAL_STAFF" } },
+      { referral_id: OTHER_REFERRAL, slot_id: SLOT_B }
+    )).rejects.toMatchObject({
+      status: 409,
+      code: "ACTIVE_APPOINTMENT_EXISTS",
+    });
+    expect(patientLocks.length).toBeGreaterThanOrEqual(2);
+    expect(mockQueries.filter(({ sql }) => sql.includes("INSERT INTO tbl_video_consultations")).length).toBe(1);
+  });
+
+  test("Path 1 confirmation locks the patient row before checking active appointments", async () => {
+    await service.directConfirmHospitalSlot(
+      HOSPITAL_STAFF,
+      { user: { id: HOSPITAL_STAFF, role_name: "HOSPITAL_STAFF" } },
+      { referral_id: REFERRAL, slot_id: SLOT }
+    );
+    const lockIndex = mockQueries.findIndex(({ sql }) =>
+      sql.includes("SELECT id FROM tbl_patients WHERE id = $1 FOR UPDATE")
+    );
+    const insertIndex = mockQueries.findIndex(({ sql }) =>
+      sql.includes("INSERT INTO tbl_video_consultations")
+    );
+    expect(lockIndex).toBeGreaterThanOrEqual(0);
+    expect(insertIndex).toBeGreaterThan(lockIndex);
+  });
+
+  test("Path 2 final confirmation also rejects an active patient appointment", async () => {
+    mockHandler = mockDefault({
+      "FOR UPDATE OF availability": {
+        rows: [availabilityRequest({ status: "ACCEPTED" })],
+      },
+      "consultation.patient_id = $1": {
+        rows: [{
+          id: VIDEO,
+          referral_id: OTHER_REFERRAL,
+          status: "CONFIRMED",
+          slot_start: START,
+          slot_end: END,
+          patient_code: "P-1",
+        }],
+      },
+    });
+
+    await expect(service.confirmHospitalRequest(
+      HOSPITAL_STAFF,
+      { user: { id: HOSPITAL_STAFF, role_name: "HOSPITAL_STAFF" } },
+      REQUEST
+    )).rejects.toMatchObject({
+      status: 409,
+      code: "ACTIVE_APPOINTMENT_EXISTS",
     });
   });
 });

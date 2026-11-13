@@ -90,7 +90,7 @@ test("Hospital Staff dashboard shows appointment analytics from its facility-sco
   });
 });
 
-test("video consultation requests show specialist, facility, consent and slot availability before confirmation", async () => {
+test("video consultation requests show specialist details and block legacy direct confirm", async () => {
   render(
     <MemoryRouter initialEntries={["/hospital-staff/appointments"]}>
       <Routes>
@@ -103,10 +103,11 @@ test("video consultation requests show specialist, facility, consent and slot av
   expect(screen.getByText("Synthetic Hospital")).toBeInTheDocument();
   expect(screen.getByText("specialist.teleconsultConsentStatus.ACTIVE")).toBeInTheDocument();
   expect(screen.getByText("hospitalStaff.availability.RESERVED")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "hospitalStaff.confirmAppointment" })).toBeEnabled();
+  expect(screen.getByText("hospitalStaff.videoConfirmRequiresSpecialistApproval")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "hospitalStaff.confirmAppointment" })).not.toBeInTheDocument();
 });
 
-test("video consultation confirmation is disabled without availability or active consent", async () => {
+test("unavailable video request cannot use legacy confirm and must request Specialist slot approval", async () => {
   api.get.mockImplementation((path) => {
     if (path === "/hospital-staff/video-consultations") {
       return Promise.resolve({
@@ -135,13 +136,14 @@ test("video consultation confirmation is disabled without availability or active
     </MemoryRouter>
   );
 
-  expect(await screen.findByRole("button", { name: "hospitalStaff.confirmAppointment" })).toBeDisabled();
+  expect(await screen.findByText("hospitalStaff.videoConfirmRequiresSpecialistApproval")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "hospitalStaff.confirmAppointment" })).not.toBeInTheDocument();
   expect(screen.getByText("hospitalStaff.slotUnavailable")).toBeInTheDocument();
   expect(screen.getByText("hospitalStaff.videoConsentRequired")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "hospitalStaff.rescheduleVideoRequest" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "hospitalStaff.requestSlotApproval" })).toBeDisabled();
 });
 
-test("expired video request cannot be confirmed and can request a new time from the assigned Specialist", async () => {
+test("expired video request cannot use legacy confirm and can request a new time from the assigned Specialist", async () => {
   api.get.mockImplementation((path) => {
     if (path === "/hospital-staff/video-consultations") {
       return Promise.resolve({
@@ -169,7 +171,7 @@ test("expired video request cannot be confirmed and can request a new time from 
   );
 
   expect(await screen.findByText("hospitalStaff.slotExpired")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "hospitalStaff.confirmAppointment" })).toBeDisabled();
+  expect(screen.queryByRole("button", { name: "hospitalStaff.confirmAppointment" })).not.toBeInTheDocument();
   fireEvent.change(screen.getByLabelText("hospitalStaff.requestedDateTime", { selector: "input" }), {
     target: { value: "2030-01-04T10:00" },
   });
@@ -231,10 +233,11 @@ test("confirmed availability request is represented by its linked consultation o
   expect(screen.getByText(/SYNTH-VIDEO-REF-001/)).toBeInTheDocument();
 });
 
-test("Hospital Staff can reschedule a request only to an offered Specialist slot", async () => {
+test("Hospital Staff requests Specialist approval for an offered alternative slot", async () => {
   const appointment = {
     ...syntheticVideoConsultation,
     availability_status: "UNAVAILABLE",
+    signed_video_decision: true,
     alternative_slots: [{
       id: "synthetic-alternative-slot",
       slot_start: "2030-01-03T10:00:00.000Z",
@@ -245,9 +248,15 @@ test("Hospital Staff can reschedule a request only to an offered Specialist slot
     if (path === "/hospital-staff/video-consultations") {
       return Promise.resolve({ data: { consultations: [appointment] } });
     }
+    if (path === "/hospital-staff/video-availability-requests") {
+      return Promise.resolve({ data: { requests: [] } });
+    }
+    if (path === "/hospital-staff/video-availability-requests/eligible-referrals") {
+      return Promise.resolve({ data: { referrals: [] } });
+    }
     return Promise.resolve({ data: { appointments: syntheticAppointments } });
   });
-  api.post.mockResolvedValue({ data: { consultation: { status_code: "RESCHEDULED" } } });
+  api.post.mockResolvedValue({ data: { request: { status: "PENDING" } } });
 
   render(
     <MemoryRouter initialEntries={["/hospital-staff/appointments"]}>
@@ -260,15 +269,104 @@ test("Hospital Staff can reschedule a request only to an offered Specialist slot
   fireEvent.change(await screen.findByRole("combobox", {
     name: "hospitalStaff.alternativeSpecialistSlot",
   }), { target: { value: "synthetic-alternative-slot" } });
-  fireEvent.change(screen.getByLabelText("hospitalStaff.rescheduleReason"), {
-    target: { value: "Synthetic reschedule reason" },
-  });
-  fireEvent.click(screen.getByRole("button", { name: "hospitalStaff.rescheduleVideoRequest" }));
+  fireEvent.click(screen.getByRole("button", { name: "hospitalStaff.requestSlotApproval" }));
 
   await waitFor(() => expect(api.post).toHaveBeenCalledWith(
-    "/hospital-staff/video-consultations/synthetic-video-consultation/reschedule",
-    { slot_id: "synthetic-alternative-slot", reason: "Synthetic reschedule reason" }
+    "/hospital-staff/video-availability-requests",
+    {
+      referral_id: appointment.referral_id,
+      requested_start: "2030-01-03T10:00:00.000Z",
+      requested_end: "2030-01-03T10:30:00.000Z",
+      reschedule_consultation_id: appointment.id,
+    }
   ));
+  expect(api.post).not.toHaveBeenCalledWith(
+    expect.stringContaining("/video-consultations/"),
+    expect.anything()
+  );
+});
+
+test("Requested Navigator video appointment Path 1 confirms published Specialist slot", async () => {
+  const videoAppointment = {
+    id: "synthetic-nav-request-appointment",
+    referral_id: "synthetic-nav-request-referral",
+    patient_code: "AD-2026-000019",
+    referral_code: "REF-2026-000009",
+    specialty_name: "ENT",
+    requesting_clinician: "srinu",
+    specialist_name: "Raju",
+    scheduled_at: "2026-11-12T16:25:00.000Z",
+    location_note: "hello",
+    assigned_service: "VIDEO_CONSULTATION",
+    referral_mode: "VIDEO_CONSULT",
+    status_code: "REQUESTED",
+    has_active_video_consultation: false,
+    signed_video_decision: true,
+  };
+  api.get.mockImplementation((path) => {
+    if (path === "/hospital-staff/video-consultations") {
+      return Promise.resolve({ data: { consultations: [] } });
+    }
+    if (path === "/hospital-staff/video-availability-requests") {
+      return Promise.resolve({ data: { requests: [] } });
+    }
+    if (path === "/hospital-staff/video-availability-requests/eligible-referrals") {
+      return Promise.resolve({
+        data: {
+          referrals: [{
+            referral_id: "synthetic-nav-request-referral",
+            patient_code: "AD-2026-000019",
+            referral_code: "REF-2026-000009",
+            specialist_name: "Raju",
+            specialty_name: "ENT",
+            hospital_name: "Synthetic Hospital",
+            teleconsult_consent_status: "ACTIVE",
+            signed_video_decision: true,
+            available_slots: [{
+              id: "synthetic-published-slot",
+              slot_start: "2026-11-12T16:30:00.000Z",
+              slot_end: "2026-11-12T17:00:00.000Z",
+            }],
+          }],
+        },
+      });
+    }
+    return Promise.resolve({ data: { appointments: [videoAppointment] } });
+  });
+  api.post.mockResolvedValue({ data: { request: { status: "PENDING" } } });
+
+  render(
+    <MemoryRouter initialEntries={["/hospital-staff/appointments"]}>
+      <Routes>
+        <Route path="/hospital-staff/appointments" element={<HospitalStaffDashboard />} />
+      </Routes>
+    </MemoryRouter>
+  );
+
+  const confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(true);
+  expect(await screen.findByText("hospitalStaff.navigatorRequestStaffHint")).toBeInTheDocument();
+  expect(screen.getAllByText("AD-2026-000019").length).toBeGreaterThan(0);
+  const appointmentSlotSelect = screen.getAllByLabelText("hospitalStaff.alternativeSpecialistSlot")
+    .find((element) => element.closest(".hospital-staff-video-alternatives"));
+  expect(appointmentSlotSelect).toBeTruthy();
+  fireEvent.change(appointmentSlotSelect, {
+    target: { value: "synthetic-published-slot" },
+  });
+  fireEvent.click(
+    appointmentSlotSelect.closest("form").querySelector('button[type="submit"]')
+  );
+  await waitFor(() => expect(api.post).toHaveBeenCalledWith(
+    "/hospital-staff/video-availability-requests/direct-confirm",
+    {
+      referral_id: "synthetic-nav-request-referral",
+      slot_id: "synthetic-published-slot",
+    }
+  ));
+  expect(api.post).not.toHaveBeenCalledWith(
+    "/hospital-staff/video-availability-requests",
+    expect.objectContaining({ referral_id: "synthetic-nav-request-referral" })
+  );
+  confirmSpy.mockRestore();
 });
 
 test("Hospital Staff sends availability requests separately from regular appointments", async () => {
@@ -369,7 +467,72 @@ test("Hospital Staff cannot coordinate availability without a signed video decis
   expect(api.post).not.toHaveBeenCalled();
 });
 
-test("Hospital Staff can confirm an exact available pre-created Specialist slot", async () => {
+test("STAFF_REVIEW Path 1 confirms published slot; Path 2 forward remains available", async () => {
+  const confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(true);
+  api.get.mockImplementation((path) => {
+    if (path === "/hospital-staff/video-consultations") {
+      return Promise.resolve({ data: { consultations: [] } });
+    }
+    if (path === "/hospital-staff/video-availability-requests") {
+      return Promise.resolve({
+        data: {
+          requests: [{
+            id: "synthetic-staff-review-request",
+            referral_id: "synthetic-staff-review-referral",
+            patient_code: "SYNTH-STAFF-REVIEW-PAT",
+            referral_code: "SYNTH-STAFF-REVIEW-REF",
+            specialist_name: "Synthetic Specialist",
+            specialty_name: "Synthetic specialty",
+            hospital_name: "Synthetic Hospital",
+            requested_start: "2035-02-01T10:00:00.000Z",
+            requested_end: "2035-02-01T10:30:00.000Z",
+            status: "STAFF_REVIEW",
+            availability_status: "PENDING",
+            teleconsult_consent_status: "ACTIVE",
+            signed_video_decision: true,
+            alternative_slots: [{
+              id: "synthetic-published-slot",
+              slot_start: "2035-02-01T11:00:00.000Z",
+              slot_end: "2035-02-01T11:30:00.000Z",
+            }],
+          }],
+        },
+      });
+    }
+    if (path === "/hospital-staff/video-availability-requests/eligible-referrals") {
+      return Promise.resolve({ data: { referrals: [] } });
+    }
+    return Promise.resolve({ data: { appointments: [] } });
+  });
+  api.post.mockResolvedValue({ data: { appointment: { status_code: "CONFIRMED" } } });
+
+  render(
+    <MemoryRouter initialEntries={["/hospital-staff/appointments"]}>
+      <Routes>
+        <Route path="/hospital-staff/appointments" element={<HospitalStaffDashboard />} />
+      </Routes>
+    </MemoryRouter>
+  );
+
+  expect(await screen.findByText("SYNTH-STAFF-REVIEW-PAT")).toBeInTheDocument();
+  expect(screen.getByText("hospitalStaff.waitingForStaffReview")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "hospitalStaff.forwardToSpecialist" })).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("hospitalStaff.alternativeSpecialistSlot"), {
+    target: { value: "synthetic-published-slot" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "hospitalStaff.confirmExistingSlot" }));
+  await waitFor(() => expect(api.post).toHaveBeenCalledWith(
+    "/hospital-staff/video-availability-requests/direct-confirm",
+    {
+      referral_id: "synthetic-staff-review-referral",
+      slot_id: "synthetic-published-slot",
+    }
+  ));
+  confirmSpy.mockRestore();
+});
+
+test("Path 1 confirms published Specialist slot without availability request", async () => {
+  const confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(true);
   api.get.mockImplementation((path) => {
     if (path === "/hospital-staff/video-consultations") {
       return Promise.resolve({ data: { consultations: [] } });
@@ -413,15 +576,20 @@ test("Hospital Staff can confirm an exact available pre-created Specialist slot"
   fireEvent.click(screen.getByRole("button", { name: "hospitalStaff.confirmExistingSlot" }));
   await waitFor(() => expect(api.post).toHaveBeenCalledWith(
     "/hospital-staff/video-availability-requests/direct-confirm",
-    { referral_id: "synthetic-direct-referral", slot_id: "synthetic-existing-slot" }
+    {
+      referral_id: "synthetic-direct-referral",
+      slot_id: "synthetic-existing-slot",
+    }
   ));
   expect(api.post).not.toHaveBeenCalledWith(
     "/hospital-staff/video-availability-requests",
     expect.anything()
   );
+  confirmSpy.mockRestore();
 });
 
 test("Hospital Staff can confirm an accepted response without a pre-created slot", async () => {
+  const confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(true);
   const availabilityRequest = {
     id: "synthetic-availability-request",
     patient_code: "SYNTH-VIDEO-PAT-003",
@@ -470,6 +638,7 @@ test("Hospital Staff can confirm an accepted response without a pre-created slot
     "/hospital-staff/video-availability-requests/synthetic-availability-request/confirm",
     {}
   ));
+  confirmSpy.mockRestore();
 });
 
 test("Hospital Staff cannot confirm an availability response after TELECONSULT consent is withdrawn", async () => {
@@ -511,16 +680,24 @@ test("Hospital Staff cannot confirm an availability response after TELECONSULT c
   expect(screen.getByRole("button", { name: "hospitalStaff.confirmAppointment" })).toBeDisabled();
 });
 
-test("a BOTH referral labeled ENT - Video Consultation cannot use generic appointment confirmation", async () => {
+test("BOTH referral labeled Video Consultation without signed decision uses hospital confirm", async () => {
   const mixedModeAppointment = {
     ...syntheticAppointments[0],
+    referral_id: "synthetic-both-video-referral",
     referral_mode: "BOTH",
     assigned_service: "ENT - Video Consultation",
-    has_active_video_consultation: true,
+    has_active_video_consultation: false,
+    signed_video_decision: false,
   };
   api.get.mockImplementation((path) => {
     if (path === "/hospital-staff/video-consultations") {
       return Promise.resolve({ data: { consultations: [] } });
+    }
+    if (path === "/hospital-staff/video-availability-requests") {
+      return Promise.resolve({ data: { requests: [] } });
+    }
+    if (path === "/hospital-staff/video-availability-requests/eligible-referrals") {
+      return Promise.resolve({ data: { referrals: [] } });
     }
     return Promise.resolve({ data: { appointments: [mixedModeAppointment] } });
   });
@@ -533,7 +710,42 @@ test("a BOTH referral labeled ENT - Video Consultation cannot use generic appoin
     </MemoryRouter>
   );
 
-  expect(await screen.findByText("hospitalStaff.videoRequestUseQueue")).toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: "hospitalStaff.confirm" })).toBeInTheDocument();
+  expect(screen.queryByText("hospitalStaff.noSlotRequestSpecialistHint")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "hospitalStaff.sendAvailabilityRequest" })).not.toBeInTheDocument();
+});
+
+test("active video consultation on BOTH referral blocks generic appointment confirmation", async () => {
+  const mixedModeAppointment = {
+    ...syntheticAppointments[0],
+    referral_id: "synthetic-both-active-video-referral",
+    referral_mode: "BOTH",
+    assigned_service: "ENT - Video Consultation",
+    has_active_video_consultation: true,
+    signed_video_decision: false,
+  };
+  api.get.mockImplementation((path) => {
+    if (path === "/hospital-staff/video-consultations") {
+      return Promise.resolve({ data: { consultations: [] } });
+    }
+    if (path === "/hospital-staff/video-availability-requests") {
+      return Promise.resolve({ data: { requests: [] } });
+    }
+    if (path === "/hospital-staff/video-availability-requests/eligible-referrals") {
+      return Promise.resolve({ data: { referrals: [] } });
+    }
+    return Promise.resolve({ data: { appointments: [mixedModeAppointment] } });
+  });
+
+  render(
+    <MemoryRouter initialEntries={["/hospital-staff/appointments"]}>
+      <Routes>
+        <Route path="/hospital-staff/appointments" element={<HospitalStaffDashboard />} />
+      </Routes>
+    </MemoryRouter>
+  );
+
+  expect(await screen.findByText("hospitalStaff.videoDecisionRequired")).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "hospitalStaff.confirm" })).not.toBeInTheDocument();
-  expect(api.post).not.toHaveBeenCalled();
+  expect(screen.queryByRole("button", { name: "hospitalStaff.sendAvailabilityRequest" })).not.toBeInTheDocument();
 });

@@ -27,10 +27,32 @@ const facilities = [
   { id: 9, district_id: 2, mandal_id: 20, facility_type: "PHC", name_en: "PHC Anakapalli" },
 ];
 
+const customRoles = [{
+  id: 40,
+  code: "CUSTOM_AUDITOR",
+  name_en: "Custom auditor",
+  name_te: null,
+  description: "Read-only reports access",
+  permissions: ["page.reports", "master.view"],
+  permission_details: [
+    { code: "master.view", resource: "master", action: "read", description: "View masters" },
+    { code: "page.reports", resource: "page", action: "access", description: "Open reports" },
+  ],
+}];
+
 function mockApi(optionDistricts, optionMandals = mandals) {
   api.get.mockImplementation((url) => Promise.resolve({
     data: url.endsWith("/options")
-      ? { options: { districts: optionDistricts, facilities, specialties: [], mandals: optionMandals } }
+      ? {
+          options: {
+            districts: optionDistricts,
+            facilities,
+            specialties: [],
+            mandals: optionMandals,
+            clinical_roles: ["MEDICAL_OFFICER", "SPECIALIST", "NAVIGATOR", "HOSPITAL_STAFF"],
+            custom_roles: customRoles,
+          },
+        }
       : {
           staff: [{
             id: "mo-1", full_name: "Ravi Teja", username: "mo.ravi.1234", status: "ACTIVE", role_code: "MEDICAL_OFFICER",
@@ -45,6 +67,7 @@ function renderPage(path = "/district/staff/medical-officers") {
     <MemoryRouter initialEntries={[path]}>
       <Routes>
         <Route path="/district/staff/:staffPage" element={<StaffManagement />} />
+        <Route path="/district/custom-accounts" element={<StaffManagement customOnly />} />
         <Route path="/admin/staff" element={<StaffManagement />} />
       </Routes>
     </MemoryRouter>
@@ -199,4 +222,18 @@ test("System Admin can create a Hospital Staff account only at a hospital", asyn
     district_id: 1,
     facility_id: 8,
   }));
+});
+
+test("District Admin custom-account page shows permission summary for selected custom role", async () => {
+  useAuth.mockReturnValue({ user: { role: "DISTRICT_ADMIN" } });
+  mockApi([districts[0]], [mandals[0]]);
+  renderPage("/district/custom-accounts");
+
+  fireEvent.click(await screen.findByRole("button", { name: /Add staff/ }));
+  const dialog = screen.getByRole("dialog");
+  expect(within(dialog).getByText("Custom role accounts")).toBeInTheDocument();
+  await userEvent.selectOptions(within(dialog).getByLabelText("Role"), "CUSTOM_AUDITOR");
+  expect(within(dialog).getByText(/Read-only reports access/)).toBeInTheDocument();
+  expect(within(dialog).getByText(/page\.reports/)).toBeInTheDocument();
+  expect(within(dialog).getByText(/master\.view/)).toBeInTheDocument();
 });

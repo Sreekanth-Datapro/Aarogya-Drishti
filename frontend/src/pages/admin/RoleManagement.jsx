@@ -28,6 +28,8 @@ import { Alert, Button, Card, Modal, TextField } from "../../components/ui";
 import "./RoleManagement.css";
 
 const EMPTY_ROLE = { name: "", name_te: "", code: "", description: "" };
+// View = page.* access. Other columns are informational for custom roles (API actions stay on functional permissions).
+const SCREEN_ACTION_COLUMNS = ["view", "create", "edit", "delete", "approve", "verify", "forward", "export"];
 
 export default function RoleManagement() {
   const { user: currentUser } = useAuth();
@@ -264,6 +266,12 @@ export default function RoleManagement() {
     try {
       await api.put(`/admin/roles/${role.id}/permissions`, { permission_ids: nextIds });
       setMessage("roleManagement.permissionsSaved");
+      if (selectedRole && Number(selectedRole.id) === Number(role.id)) {
+        setSelectedRole((current) => (
+          current ? { ...current, permission_ids: nextIds, permissions: nextCodes } : current
+        ));
+        setSelectedPermissions(nextIds);
+      }
       await loadData();
     } catch (requestError) {
       setRoles((currentRoles) => currentRoles.map((item) => (
@@ -378,7 +386,7 @@ export default function RoleManagement() {
                 usersLabel={t("roleManagement.assignedUsers")}
               />
             ))}
-          </div>
+      </div>
         )}
       </section>
 
@@ -474,13 +482,13 @@ export default function RoleManagement() {
                           {!role.is_protected && <Button size="sm" variant="ghost" onClick={() => editRole(role)}>{t("roleManagement.edit")}</Button>}
                           <Button size="sm" variant="ghost" onClick={() => showUsers(role)}>{t("roleManagement.viewUsers")}</Button>
                           {!role.is_protected && (
-                            <Button
-                              size="sm"
-                              variant={role.is_active ? "danger" : "secondary"}
-                              onClick={() => toggleRole(role)}
-                            >
+                          <Button
+                            size="sm"
+                            variant={role.is_active ? "danger" : "secondary"}
+                            onClick={() => toggleRole(role)}
+                          >
                               {role.is_active ? t("roleManagement.deactivate") : t("roleManagement.activate")}
-                            </Button>
+                          </Button>
                           )}
                         </div>
                       </td>
@@ -505,61 +513,131 @@ export default function RoleManagement() {
         </div>
       )}
 
-      <div className="section">
-        <Card
-          title={t("roleManagement.pagesPanelTitle")}
-          subtitle={t("roleManagement.pagesPanelSubtitle")}
-        >
+        <div className="section">
+          <Card
+            title={t("roleManagement.pagesPanelTitle")}
+            subtitle={t("roleManagement.pagesPanelSubtitle")}
+          >
           {loading ? <p>{t("roleManagement.loading")}</p> : (
             <>
               <p className="cell-sub">{t("roleManagement.pagesPanelHint")}</p>
-              <div className="table-scroll role-matrix-scroll" role="region" aria-label={t("roleManagement.pagesPanelTitle")} tabIndex="0">
-                <table className="data-table rbac-permission-matrix role-permission-matrix">
-                  <thead>
-                    <tr>
-                      <th scope="col" className="role-matrix-role-heading">{t("roleManagement.colRole")}</th>
+              {selectedRole && !selectedRole.is_protected ? (
+                <div className="table-scroll role-matrix-scroll" role="region" aria-label={t("roleManagement.screenPermissionMatrix")} tabIndex="0">
+                  <table className="data-table rbac-permission-matrix role-permission-matrix">
+                    <thead>
+                      <tr>
+                        <th scope="col" className="role-matrix-role-heading">{t("roleManagement.colScreen")}</th>
+                        {SCREEN_ACTION_COLUMNS.map((action) => (
+                          <th key={action} scope="col">{t(`roleManagement.action.${action}`)}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
                       {permissions
                         .filter((permission) => permission.resource === "page")
-                        .map((permission) => (
-                          <th key={permission.id} scope="col" title={permission.description || permission.code}>
-                            {permission.code.replace(/^page\./, "")}
-                          </th>
-                        ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {roles.map((role) => (
-                      <tr key={`page-row-${role.id}`}>
-                        <th scope="row" className="role-matrix-role-cell">
-                          <strong>{roleName(role)}</strong>
-                          <span className="cell-sub">{role.code}</span>
-                          {role.is_protected && <span className="role-matrix-protected">{t("roleManagement.protected")}</span>}
-                        </th>
+                        .map((permission) => {
+                          const screenKey = permission.code.replace(/^page\./, "");
+                          const viewChecked = (selectedRole.permissions || []).includes(permission.code);
+                          return (
+                            <tr key={`screen-action-${permission.id}`}>
+                              <th scope="row" className="role-matrix-role-cell">
+                                <strong>{screenKey}</strong>
+                                <span className="cell-sub">{permission.code}</span>
+                              </th>
+                              {SCREEN_ACTION_COLUMNS.map((action) => {
+                                if (action === "view") {
+                                  return (
+                                    <td key={`${permission.id}-${action}`}>
+                                      <label className={`role-matrix-checkbox ${!permission.assignable ? "locked" : ""}`}>
+                                        <input
+                                          type="checkbox"
+                                          aria-label={`${selectedRole.code} ${permission.code} view`}
+                                          checked={viewChecked}
+                                          disabled={saving || !permission.assignable}
+                                          title={!permission.assignable
+                                            ? t("roleManagement.pagePermissionLocked")
+                                            : t("roleManagement.action.view")}
+                                          onChange={(event) => updateMatrixPermission(
+                                            selectedRole,
+                                            permission,
+                                            event.target.checked
+                                          )}
+                                        />
+                                      </label>
+                                    </td>
+                                  );
+                                }
+                                return (
+                                  <td key={`${permission.id}-${action}`}>
+                                    <span
+                                      className="role-matrix-action-na"
+                                      title={t("roleManagement.actionColumnLocked")}
+                                    >
+                                      {t("roleManagement.actionNotApplicable")}
+                                    </span>
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="table-scroll role-matrix-scroll" role="region" aria-label={t("roleManagement.pagesPanelTitle")} tabIndex="0">
+                  <table className="data-table rbac-permission-matrix role-permission-matrix">
+                    <thead>
+                      <tr>
+                        <th scope="col" className="role-matrix-role-heading">{t("roleManagement.colRole")}</th>
                         {permissions
                           .filter((permission) => permission.resource === "page")
                           .map((permission) => (
-                            <td key={`page-${role.id}-${permission.id}`}>
-                              <label className={`role-matrix-checkbox ${role.is_protected || !permission.assignable ? "locked" : ""}`}>
-                                <input
-                                  type="checkbox"
-                                  aria-label={`${role.code} ${permission.code}`}
-                                  checked={(role.permissions || []).includes(permission.code)}
-                                  disabled={saving || role.is_protected || !permission.assignable}
-                                  title={role.is_protected
-                                    ? t("roleManagement.builtInPermissionsLocked")
-                                    : !permission.assignable
-                                      ? t("roleManagement.pagePermissionLocked")
-                                      : undefined}
-                                  onChange={(event) => updateMatrixPermission(role, permission, event.target.checked)}
-                                />
-                              </label>
-                            </td>
+                            <th key={permission.id} scope="col" title={permission.description || permission.code}>
+                              {permission.code.replace(/^page\./, "")}
+                              <div className="cell-sub">{t("roleManagement.action.view")}</div>
+                            </th>
                           ))}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {roles.map((role) => (
+                        <tr key={`page-row-${role.id}`}>
+                          <th scope="row" className="role-matrix-role-cell">
+                            <strong>{roleName(role)}</strong>
+                            <span className="cell-sub">{role.code}</span>
+                            {role.is_protected && <span className="role-matrix-protected">{t("roleManagement.protected")}</span>}
+                          </th>
+                          {permissions
+                            .filter((permission) => permission.resource === "page")
+                            .map((permission) => (
+                              <td key={`page-${role.id}-${permission.id}`}>
+                                <label className={`role-matrix-checkbox ${role.is_protected || !permission.assignable ? "locked" : ""}`}>
+                                  <input
+                                    type="checkbox"
+                                    aria-label={`${role.code} ${permission.code}`}
+                                    checked={(role.permissions || []).includes(permission.code)}
+                                    disabled={saving || role.is_protected || !permission.assignable}
+                                    title={role.is_protected
+                                      ? t("roleManagement.builtInPermissionsLocked")
+                                      : !permission.assignable
+                                        ? t("roleManagement.pagePermissionLocked")
+                                        : t("roleManagement.action.view")}
+                                    onChange={(event) => updateMatrixPermission(role, permission, event.target.checked)}
+                                  />
+                                </label>
+                              </td>
+                            ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <p className="role-matrix-note">
+                <ShieldCheck size={15} aria-hidden="true" />
+                <span>{t("roleManagement.actionColumnLocked")}</span>
+              </p>
             </>
           )}
         </Card>
@@ -667,7 +745,7 @@ export default function RoleManagement() {
               </section>
             ))}
           </div>
-        </Card>
+          </Card>
       </div>
 
       <div className="section">
@@ -750,8 +828,8 @@ export default function RoleManagement() {
               <Button size="sm" variant="secondary" disabled={userPage >= userPagination.total_pages || usersLoading} onClick={() => setUserPage((page) => page + 1)}>
                 {t("roleManagement.nextPage")}
               </Button>
-            </div>
-          )}
+        </div>
+      )}
         </Card>
       </div>
 
@@ -819,21 +897,21 @@ function PermissionChoices({ permissions, selected, onToggle }) {
     groupPermissions(permissions).map(([module, modulePermissions]) => (
       <section key={module} className="section">
         <h4>{module}</h4>
-        <div className="grid grid-2">
+    <div className="grid grid-2">
           {modulePermissions.map((permission) => (
-            <label key={permission.id} className="checkbox">
-              <input
-                type="checkbox"
+        <label key={permission.id} className="checkbox">
+          <input
+            type="checkbox"
                 checked={selected.includes(Number(permission.id))}
                 onChange={() => onToggle(Number(permission.id))}
-              />
-              <span>
-                <strong>{permission.code}</strong>
-                {permission.description && <small className="cell-sub">{permission.description}</small>}
-              </span>
-            </label>
-          ))}
-        </div>
+          />
+          <span>
+            <strong>{permission.code}</strong>
+            {permission.description && <small className="cell-sub">{permission.description}</small>}
+          </span>
+        </label>
+      ))}
+    </div>
       </section>
     ))
   );

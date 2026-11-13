@@ -8,11 +8,17 @@ describe("buildDatabaseSslConfig", () => {
     expect(buildDatabaseSslConfig({})).toBeUndefined();
     expect(buildDatabaseSslConfig({ DB_SSL: "disable" })).toBeUndefined();
     expect(buildDatabaseSslConfig({ DB_SSL: "false" })).toBeUndefined();
+    expect(buildDatabaseSslConfig({ DB_SSL: "0" })).toBeUndefined();
+    expect(buildDatabaseSslConfig({ DB_SSL: "off" })).toBeUndefined();
   });
 
   test("enables TLS with certificate verification", () => {
     const ssl = buildDatabaseSslConfig({ DB_SSL: "require" });
     expect(ssl).toEqual({ rejectUnauthorized: true });
+    expect(ssl.rejectUnauthorized).not.toBe(false);
+
+    const verifyFull = buildDatabaseSslConfig({ DB_SSL: "verify-full" });
+    expect(verifyFull).toEqual({ rejectUnauthorized: true });
   });
 
   test("loads a CA certificate for verification", () => {

@@ -57,20 +57,28 @@ function deriveLifecycle({
   slotStart,
   slotEnd,
   meetingExpiresAt: expiresAt,
+  attendance = null,
   now = new Date(),
 }) {
   const start = new Date(slotStart);
   const end = new Date(slotEnd);
   const expiry = expiresAt ? new Date(expiresAt) : new Date(end.getTime() + MEETING_GRACE_MS);
-  const cancelled = isActive === false || statusCode === "CANCELLED";
-  if (cancelled) {
+  if (statusCode === "MISSED" || attendance === "NO_SHOW") {
     return {
-      lifecycle_status: "CANCELLED",
+      lifecycle_status: "MISSED",
       can_join: false,
-      join_blocked_reason: "CANCELLED",
+      join_blocked_reason: "MISSED",
     };
   }
-  if (statusCode === "COMPLETED") {
+  if (isActive === false || statusCode === "CANCELLED") {
+    const replaced = statusCode === "RESCHEDULED";
+    return {
+      lifecycle_status: replaced ? "RESCHEDULED" : "CANCELLED",
+      can_join: false,
+      join_blocked_reason: replaced ? "RESCHEDULED" : "CANCELLED",
+    };
+  }
+  if (statusCode === "COMPLETED" || attendance === "ATTENDED") {
     return {
       lifecycle_status: "COMPLETED",
       can_join: false,

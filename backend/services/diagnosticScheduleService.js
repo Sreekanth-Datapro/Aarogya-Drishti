@@ -11,6 +11,7 @@ const {
   pagination,
 } = require("./medicalOfficer/scope");
 const { createInAppNotifications } = require("./notificationService");
+const diagnosticOrderService = require("./diagnosticOrderService");
 
 const CONTACT_STATUSES = new Set(["NOT_CONTACTED", "INFORMED", "REACHED", "UNREACHABLE"]);
 const ATTENDANCE_VALUES = new Set(["ATTENDED", "NO_SHOW"]);
@@ -268,9 +269,9 @@ const APPT_SELECT = `
 
 async function loadOrderItems(client, orderId) {
   const { rows } = await client.query(
-    `SELECT item.id, item.priority, item.fasting_required, item.instructions, item.clinical_reason,
+    `SELECT item.id, item.test_id, item.priority, item.fasting_required, item.instructions, item.clinical_reason,
             test.code AS test_code, test.name_en AS test_name, test.name_te AS test_name_te,
-            category.name_en AS category_name
+            category.code AS category_code, category.name_en AS category_name
        FROM tbl_diagnostic_order_items item
        JOIN mst_diagnostic_tests test ON test.id = item.test_id
        JOIN mst_diagnostic_categories category ON category.id = test.category_id
@@ -888,7 +889,16 @@ async function getAppointmentForUser(userId, roleName, appointmentId, { client =
   if (!rows.length) throw new HttpError(404, "Diagnostic appointment not found", "NOT_FOUND");
   const items = await loadOrderItems(client, rows[0].diagnostic_order_id);
   const history = await loadAppointmentHistory(client, id);
-  return { appointment: { ...rows[0], items, history } };
+  const requiredDocuments = diagnosticOrderService.buildRequiredDocuments(items);
+  return {
+    appointment: {
+      ...rows[0],
+      order_id: rows[0].diagnostic_order_id,
+      items,
+      history,
+      required_documents: requiredDocuments,
+    },
+  };
 }
 
 async function listAppointments(userId, roleName, query = {}) {

@@ -25,3 +25,19 @@ exports.join = send(async (req) => ({
     req.params.consultationId
   ),
 }));
+
+exports.presence = send(async (req) => ({
+  presence: await videoConsultationService.recordMeetingPresence(
+    req.user.id,
+    req,
+    req.params.consultationId,
+    req.body
+  ),
+}));
+
+exports.clinicalContext = send(async (req) => ({
+  clinical: await videoConsultationService.getClinicalContext(
+    req.user.id,
+    req.params.consultationId
+  ),
+}));

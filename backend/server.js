@@ -41,6 +41,32 @@ async function startServer() {
           "Frontend build not found — API only. Run frontend production build to enable same-origin hosting."
         );
       }
+
+      // Backend-owned background jobs. Do not rely on an open browser tab.
+      if (nodeEnv !== "test") {
+        const videoConsultationService = require("./services/videoConsultationService");
+        const diagnosticWorkflowService = require("./services/diagnosticWorkflowService");
+        const ATTENDANCE_SCAN_MS = 60 * 1000;
+        const FOLLOWUP_DUE_SCAN_MS = 5 * 60 * 1000;
+        const runAttendanceScan = async () => {
+          try {
+            await videoConsultationService.finalizeExpiredVideoAttendance();
+          } catch (scanError) {
+            console.error("Video attendance finalization failed:", scanError.message);
+          }
+        };
+        const runFollowupDueScan = async () => {
+          try {
+            await diagnosticWorkflowService.scanDueFollowupNotifications();
+          } catch (scanError) {
+            console.error("Diagnostic follow-up due scan failed:", scanError.message);
+          }
+        };
+        setInterval(runAttendanceScan, ATTENDANCE_SCAN_MS);
+        setTimeout(runAttendanceScan, 5000);
+        setInterval(runFollowupDueScan, FOLLOWUP_DUE_SCAN_MS);
+        setTimeout(runFollowupDueScan, 15000);
+      }
     });
   } catch (error) {
     console.error("Server startup failed:", error.message);

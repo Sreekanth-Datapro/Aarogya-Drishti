@@ -96,6 +96,8 @@ Authenticated Express→AI calls use the shared bearer token from both env files
 | `DB_SSL` | `disable` locally; `require` / `verify-full` on managed Postgres |
 | `DB_SSL_CA` | Optional PEM string for verification |
 | `DB_SSL_CA_FILE` | Optional path to CA PEM |
+| `MIGRATION_TRUSTED_DATABASE_NAME` | Exact Postgres DB name for 003 verification when not `Aarogya` (Render) |
+| `MIGRATE_APPROVE_003` | Set to exact `PROMOTE_BOOTSTRAP` only with CLI `--approve-003-promote-bootstrap` |
 | `JWT_SECRET` | ≥32 bytes |
 | `JWT_EXPIRES_IN` | Optional |
 | `REFRESH_TOKEN_TTL_HOURS` | Optional |
@@ -191,11 +193,20 @@ Unknown `/api/*` paths return JSON 404 (never the SPA HTML).
 
 ## Migrations & backups
 
+Strict order is preserved: **001 → 002 → 003 → 004…** (never 004 before 003).
+
 1. Take a database backup before any production migrate.
-2. Review: `npm run migrate` (from `backend/`, against the **target** DB only after approval).
-3. Apply: `npm run migrate:apply` — **never** automatic in Compose/Docker entrypoint.
-4. Bootstrap refuses to start if migrations are outstanding.
-5. Never run migrate against production from a developer laptop without explicit approval.
+2. Empty Render DB: load `backend/ALL_IN_ONE (1).sql` once (approved connection only).
+3. Review: `npm run migrate` (from `backend/`, against the **target** DB only after approval).
+4. **Phase 1** — stop before 003:  
+   `node scripts/migrate.js --apply --defer-003`  
+   Applies/baselines **001–002 only**. `003` and all later files stay pending (never marked applied).
+5. Start the app so bootstrap can create `SYSTEM_ADMIN` when **003 is the next pending** migration (004+ may still be pending).
+6. **Phase 2** — dual-approved 003, then later files in order:  
+   `MIGRATE_APPROVE_003=PROMOTE_BOOTSTRAP node scripts/migrate.js --apply --approve-003-promote-bootstrap`  
+   Requires trusted DB name, existing bootstrap `SYSTEM_ADMIN`, and verifies `SUPER_ADMIN` + audit before recording 003. Only after 003 is recorded may 004+ run.
+7. Never auto-run migrate in Compose/Docker entrypoint.
+8. Never run migrate against production from a developer laptop without explicit approval.
 
 ## Deployment & rollback checklist
 

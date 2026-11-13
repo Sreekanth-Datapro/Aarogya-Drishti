@@ -531,8 +531,27 @@
   background: #fff;
 }
 
+.scr-ai-results article.scr-ai-result-insufficient {
+  border-color: #f59e0b;
+  background: #fffbeb;
+}
+
+.scr-ai-results article.scr-ai-result-ok {
+  border-color: #99f6e4;
+  background: #f0fdfa;
+}
+
 .scr-ai-results article p {
   margin: 6px 0 0;
+}
+
+.scr-ai-score-line {
+  font-size: 15px;
+}
+
+.scr-ai-findings {
+  margin: 8px 0 0;
+  padding-left: 18px;
 }
 
 .scr-ai-note {

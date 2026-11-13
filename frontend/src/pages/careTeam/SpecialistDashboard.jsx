@@ -1246,7 +1246,14 @@ export default function SpecialistDashboard() {
                       <Button type="submit" disabled={sendingToNavigator}>
                         {sendingToNavigator ? t("common.saving") : t("specialist.sendToNavigator")}
                       </Button>
-                      <Link className="btn btn-secondary" to="/specialist/diagnostics">
+                      <Link
+                        className="btn btn-secondary"
+                        to={
+                          selected.referral.patient_id
+                            ? `/specialist/diagnostics?patient_id=${encodeURIComponent(selected.referral.patient_id)}`
+                            : "/specialist/diagnostics"
+                        }
+                      >
                         {t("care.diagnostics")}
                       </Link>
                     </div>
@@ -1337,11 +1344,12 @@ export default function SpecialistDashboard() {
 
                 {decisionForm.decision_type === "VIDEO_CONSULTATION" && (
                   <div className="specialist-decision-dependent">
-                    <p className="care-muted">{t("specialist.teleconsultConsentRequired")}</p>
+                    {selected.teleconsult_consent?.status !== "ACTIVE" ? (
+                      <Alert type="error">
+                        {decisionFieldErrors.teleconsult_consent || t("specialist.teleconsultConsentRequired")}
+                      </Alert>
+                    ) : null}
                     <p className="care-muted">{t("specialist.videoBookingAfterSignoff")}</p>
-                    {decisionFieldErrors.teleconsult_consent && (
-                      <p className="specialist-field-error" role="alert">{decisionFieldErrors.teleconsult_consent}</p>
-                    )}
                   </div>
                 )}
 

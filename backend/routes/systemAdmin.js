@@ -30,40 +30,40 @@ const setupDeliveryRetryLimiter = rateLimit({
   message: { success: false, message: "Too many setup delivery retries. Please try again later." },
 });
 
-router.get("/roles", ...superAdminOnly, requirePermission("role.manage"), controller.listRoles);
-router.get("/rbac/dashboard", ...superAdminOnly, requirePermission("role.manage"), controller.rbacDashboard);
-router.get("/permissions", ...superAdminOnly, requirePermission("role.manage"), controller.listPermissions);
+router.get("/roles", ...systemAdminOnly, requirePermission("role.manage"), controller.listRoles);
+router.get("/rbac/dashboard", ...systemAdminOnly, requirePermission("role.manage"), controller.rbacDashboard);
+router.get("/permissions", ...systemAdminOnly, requirePermission("role.manage"), controller.listPermissions);
 router.get(
   "/users",
-  ...superAdminOnly,
+  ...systemAdminOnly,
   requirePermission("role.manage"),
   validate({ query: rbacUserQuery }),
   controller.listRbacUsers
 );
 router.patch(
   "/users/:id/role",
-  ...superAdminOnly,
+  ...systemAdminOnly,
   requirePermission("role.manage"),
   validate({ body: userRoleBody }),
   controller.updateUserRole
 );
-router.post("/roles", ...superAdminOnly, requirePermission("role.manage"), controller.createRole);
-router.patch("/roles/:id", ...superAdminOnly, requirePermission("role.manage"), controller.updateRole);
+router.post("/roles", ...systemAdminOnly, requirePermission("role.manage"), controller.createRole);
+router.patch("/roles/:id", ...systemAdminOnly, requirePermission("role.manage"), controller.updateRole);
 router.put(
   "/roles/:id/permissions",
-  ...superAdminOnly,
+  ...systemAdminOnly,
   requirePermission("role.manage"),
   controller.updateRolePermissions
 );
 router.patch(
   "/roles/:id/status",
-  ...superAdminOnly,
+  ...systemAdminOnly,
   requirePermission("role.manage"),
   controller.updateRoleStatus
 );
 router.get(
   "/roles/:id/users",
-  ...superAdminOnly,
+  ...systemAdminOnly,
   requirePermission("role.manage"),
   controller.listRoleUsers
 );

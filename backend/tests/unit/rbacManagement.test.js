@@ -14,6 +14,13 @@ jest.mock("../../db", () => ({
   connect: (...args) => mockConnect(...args),
 }));
 
+const mockInvalidateRolePermissionCache = jest.fn();
+jest.mock("../../utils/permissions", () => ({
+  getRolePermissions: jest.fn(async () => []),
+  clearPermissionCache: jest.fn(),
+  invalidateRolePermissionCache: (...args) => mockInvalidateRolePermissionCache(...args),
+}));
+
 const rbac = require("../../services/systemAdminService");
 
 const ACTOR_ID = "11111111-1111-4111-8111-111111111111";
@@ -117,11 +124,62 @@ beforeEach(() => {
   }));
 });
 
+const systemAdmin = { id: ACTOR_ID, role_name: "SYSTEM_ADMIN" };
+const systemAdminRequest = { ...request, user: systemAdmin };
+
 describe("Super Admin RBAC service", () => {
-  test("restricts role discovery to Super Admin", async () => {
-    await expect(rbac.listRoles({ id: USER_ID, role_name: "SYSTEM_ADMIN" }))
-      .rejects.toMatchObject({ status: 403, code: "FORBIDDEN" });
-    expect(mockPoolQuery).not.toHaveBeenCalled();
+  test("allows SYSTEM_ADMIN to list roles for Role Management", async () => {
+    const roles = await rbac.listRoles(systemAdmin);
+    expect(roles).toHaveLength(1);
+    expect(mockPoolQuery).toHaveBeenCalled();
+  });
+
+  test("SYSTEM_ADMIN can create a custom role with page permissions and audit", async () => {
+    const role = await rbac.createRole(systemAdmin, systemAdminRequest, {
+      name: "Reports viewer",
+      code: "REPORTS_VIEWER",
+      permission_ids: [3],
+    });
+    expect(role).toMatchObject({ id: 30, permission_ids: [3] });
+    expect(mockCalls.some(({ sql }) => sql.includes("INSERT INTO tbl_audit_logs"))).toBe(true);
+  });
+
+  test("SYSTEM_ADMIN can update role permissions and invalidates permission cache", async () => {
+    mockInvalidateRolePermissionCache.mockClear();
+    const ids = await rbac.updateRolePermissions(systemAdmin, systemAdminRequest, 2, [1, 3]);
+    expect(ids).toEqual([1, 3]);
+    expect(mockInvalidateRolePermissionCache).toHaveBeenCalledWith(2);
+    expect(mockCalls.some(({ sql }) => sql.includes("INSERT INTO tbl_audit_logs"))).toBe(true);
+  });
+
+  test("SYSTEM_ADMIN can assign an active custom role to a user", async () => {
+    const result = await rbac.updateUserRole(systemAdmin, systemAdminRequest, USER_ID, 20);
+    expect(result).toMatchObject({ role_code: "CUSTOM_AUDITOR" });
+    expect(mockCalls.some(({ sql }) => sql.includes("INSERT INTO tbl_audit_logs"))).toBe(true);
+  });
+
+  test("rejects duplicate custom role codes", async () => {
+    mockClientQuery.mockImplementation(async (sql, params = []) => {
+      const statement = sql.trim();
+      if (statement === "BEGIN" || statement === "ROLLBACK") return { rows: [] };
+      if (statement.includes("SELECT id, code, resource, action FROM mst_permissions")) {
+        return { rows: [{ id: 1, code: "master.view", resource: "master", action: "read" }] };
+      }
+      if (statement.includes("SELECT code FROM mst_permissions WHERE id")) {
+        return { rows: [{ code: "master.view" }] };
+      }
+      if (statement.includes("INSERT INTO mst_roles")) {
+        const error = new Error("duplicate key");
+        error.code = "23505";
+        throw error;
+      }
+      return { rows: [] };
+    });
+    await expect(rbac.createRole(superAdmin, request, {
+      name: "Dup",
+      code: "CUSTOM_AUDITOR",
+      permission_ids: [1],
+    })).rejects.toMatchObject({ status: 409, code: "ROLE_CODE_EXISTS" });
   });
 
   test("lists built-in and custom roles without granting editability to protected roles", async () => {

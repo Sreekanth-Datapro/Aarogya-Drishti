@@ -13,7 +13,15 @@ const listQuery = z.object({
   filter: z.enum(["all", "pending", "contacted", "scheduled", "completed", "unreachable"]).optional(),
 });
 const appointmentListQuery = z.object({
-  filter: z.enum(["upcoming", "today", "completed", "cancelled"]).optional(),
+  filter: z.enum([
+    "upcoming",
+    "today",
+    "pending_attendance",
+    "completed",
+    "missed",
+    "rescheduled",
+    "cancelled",
+  ]).optional(),
 });
 const contactBody = z.object({
   channel: z.enum(["PHONE", "HOME_VISIT", "SMS", "IN_PERSON", "OTHER"]),

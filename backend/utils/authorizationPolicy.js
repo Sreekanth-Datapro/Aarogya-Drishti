@@ -23,6 +23,10 @@ function getEffectivePermissions(roleName, permissions) {
     effective.add("role.manage");
     effective.add("district_admin.manage");
   }
+  if (roleName === "SYSTEM_ADMIN") {
+    // Role/page RBAC management; district-admin lifecycle stays Super-Admin-only.
+    effective.add("role.manage");
+  }
   if (roleName === "DISTRICT_ADMIN") {
     effective.add("user.create_staff");
   }

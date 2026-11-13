@@ -8,7 +8,15 @@ const router = express.Router();
 router.use(authenticate, allowRoles("HEALTH_WORKER"));
 
 const appointmentQuery = z.object({
-  filter: z.enum(["upcoming", "today", "completed", "cancelled"]).optional(),
+  filter: z.enum([
+    "upcoming",
+    "today",
+    "pending_attendance",
+    "completed",
+    "missed",
+    "rescheduled",
+    "cancelled",
+  ]).optional(),
 });
 
 router.get(

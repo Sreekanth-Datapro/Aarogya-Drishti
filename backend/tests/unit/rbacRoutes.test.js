@@ -90,13 +90,53 @@ test("unauthenticated RBAC requests return 401", async () => {
   expect(systemAdmin.getRbacDashboard).not.toHaveBeenCalled();
 });
 
-test("SYSTEM_ADMIN cannot access the Super Admin RBAC APIs", async () => {
+test("SYSTEM_ADMIN can access Role Management RBAC APIs", async () => {
   mockRole = "SYSTEM_ADMIN";
   const response = await request(app)
     .get("/api/admin/rbac/dashboard")
     .set("Authorization", "Bearer valid");
+  expect(response.status).toBe(200);
+  expect(systemAdmin.getRbacDashboard).toHaveBeenCalledWith(
+    expect.objectContaining({ id: "admin-1", role_name: "SYSTEM_ADMIN" })
+  );
+});
+
+test("SYSTEM_ADMIN can create roles and assign user roles via RBAC routes", async () => {
+  mockRole = "SYSTEM_ADMIN";
+  systemAdmin.createRole.mockResolvedValue({ id: 40, code: "CUSTOM_VIEWER" });
+  systemAdmin.updateUserRole.mockResolvedValue({ role_code: "CUSTOM_VIEWER" });
+
+  const createResponse = await request(app)
+    .post("/api/admin/roles")
+    .set("Authorization", "Bearer valid")
+    .send({ name: "Custom viewer", code: "CUSTOM_VIEWER", permission_ids: [] });
+  expect(createResponse.status).toBe(200);
+  expect(systemAdmin.createRole).toHaveBeenCalledWith(
+    expect.objectContaining({ role_name: "SYSTEM_ADMIN" }),
+    expect.any(Object),
+    expect.objectContaining({ code: "CUSTOM_VIEWER" })
+  );
+
+  const assignResponse = await request(app)
+    .patch("/api/admin/users/22222222-2222-4222-8222-222222222222/role")
+    .set("Authorization", "Bearer valid")
+    .send({ role_id: 40 });
+  expect(assignResponse.status).toBe(200);
+  expect(systemAdmin.updateUserRole).toHaveBeenCalledWith(
+    expect.objectContaining({ role_name: "SYSTEM_ADMIN" }),
+    expect.any(Object),
+    "22222222-2222-4222-8222-222222222222",
+    40
+  );
+});
+
+test("SYSTEM_ADMIN cannot access Super-Admin-only district admin APIs", async () => {
+  mockRole = "SYSTEM_ADMIN";
+  const response = await request(app)
+    .get("/api/admin/district-admins")
+    .set("Authorization", "Bearer valid");
   expect(response.status).toBe(403);
-  expect(systemAdmin.getRbacDashboard).not.toHaveBeenCalled();
+  expect(systemAdmin.listDistrictAdmins).not.toHaveBeenCalled();
 });
 
 test("SUPER_ADMIN can read database-backed RBAC dashboard data", async () => {

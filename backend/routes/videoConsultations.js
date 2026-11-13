@@ -19,6 +19,10 @@ const consultationParams = z.object({
   consultationId: z.string().uuid(),
 });
 
+const presenceBody = z.object({
+  event: z.enum(["JOINED", "LEFT"]),
+});
+
 router.post(
   "/:consultationId/provision",
   requireAnyPermission("video.join", "appointment.view", "appointment.confirm"),
@@ -31,6 +35,20 @@ router.post(
   requirePermission("video.join"),
   validate({ params: consultationParams }),
   controller.join
+);
+
+router.post(
+  "/:consultationId/presence",
+  requirePermission("video.join"),
+  validate({ params: consultationParams, body: presenceBody }),
+  controller.presence
+);
+
+router.get(
+  "/:consultationId/clinical-context",
+  requireAnyPermission("video.join", "consultation.note", "diagnostic.view"),
+  validate({ params: consultationParams }),
+  controller.clinicalContext
 );
 
 module.exports = router;

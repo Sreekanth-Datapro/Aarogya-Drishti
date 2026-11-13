@@ -142,22 +142,6 @@ export default function HospitalStaffDashboard() {
     }
   };
 
-  const submitVideoAction = async (consultationId, type, body = {}) => {
-    const busyId = `video-${consultationId}`;
-    setBusy(busyId);
-    setError("");
-    setMessage("");
-    try {
-      await api.post(`/hospital-staff/video-consultations/${consultationId}/${type}`, body);
-      setMessage(t(`hospitalStaff.video${type === "confirm" ? "Confirm" : "Reschedule"}Success`));
-      await load();
-    } catch (requestError) {
-      setError(apiMessage(requestError, "hospitalStaff.actionFailed"));
-    } finally {
-      setBusy("");
-    }
-  };
-
   const submitAvailabilityRequest = async (event, referralId, rescheduleConsultationId = null) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
@@ -175,6 +159,7 @@ export default function HospitalStaffDashboard() {
           : {}),
       });
       setMessage(t("hospitalStaff.availabilityRequestSent"));
+      setAction(null);
       await load();
     } catch (requestError) {
       setAvailabilityRequestError(apiMessage(requestError, "hospitalStaff.actionFailed"));
@@ -183,8 +168,10 @@ export default function HospitalStaffDashboard() {
     }
   };
 
+  // Path 1: confirm a published unbooked Specialist slot directly.
   const submitDirectVideoSlot = async (event, referralId) => {
     event.preventDefault();
+    if (!window.confirm(t("hospitalStaff.confirmExistingSlotPrompt"))) return;
     const formData = new FormData(event.currentTarget);
     setBusy(`video-slot-${referralId}`);
     setError("");
@@ -196,6 +183,43 @@ export default function HospitalStaffDashboard() {
         slot_id: formData.get("slot_id"),
       });
       setMessage(t("hospitalStaff.directSlotConfirmSuccess"));
+      setAction(null);
+      await load();
+    } catch (requestError) {
+      setAvailabilityRequestError(apiMessage(requestError, "hospitalStaff.actionFailed"));
+    } finally {
+      setBusy("");
+    }
+  };
+
+  // Path 2 helper: when an active REQUESTED consultation blocks Path 1,
+  // ask Specialist to approve a published replacement window.
+  const submitPublishedSlotApprovalRequest = async (
+    event,
+    referralId,
+    slots,
+    rescheduleConsultationId = null
+  ) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const slotId = formData.get("slot_id");
+    const slot = (slots || []).find((entry) => entry.id === slotId);
+    if (!slot) return;
+    setBusy(`availability-create-${referralId}`);
+    setError("");
+    setMessage("");
+    setAvailabilityRequestError("");
+    try {
+      await api.post("/hospital-staff/video-availability-requests", {
+        referral_id: referralId,
+        requested_start: new Date(slot.slot_start).toISOString(),
+        requested_end: new Date(slot.slot_end).toISOString(),
+        ...(rescheduleConsultationId
+          ? { reschedule_consultation_id: rescheduleConsultationId }
+          : {}),
+      });
+      setMessage(t("hospitalStaff.availabilityRequestSent"));
+      setAction(null);
       await load();
     } catch (requestError) {
       setAvailabilityRequestError(apiMessage(requestError, "hospitalStaff.actionFailed"));
@@ -205,6 +229,9 @@ export default function HospitalStaffDashboard() {
   };
 
   const submitAvailabilityAction = async (requestId, type, body = {}) => {
+    if (type === "confirm" && !window.confirm(t("hospitalStaff.confirmAppointmentPrompt"))) {
+      return;
+    }
     setBusy(`availability-${requestId}`);
     setError("");
     setMessage("");
@@ -249,7 +276,7 @@ export default function HospitalStaffDashboard() {
     }
   };
 
-  const isVideoConsultationAppointment = (appointment) =>
+  const isVideoLabeledAppointment = (appointment) =>
     appointment.has_active_video_consultation
     || appointment.referral_mode === "VIDEO_CONSULT"
     || String(appointment.assigned_service || "")
@@ -257,6 +284,26 @@ export default function HospitalStaffDashboard() {
       .toUpperCase()
       .replace(/[\s-]+/g, "_")
       .includes("VIDEO_CONSULT");
+
+  const hasSignedVideoDecisionForAppointment = (appointment, eligible, openRequest) =>
+    appointment.signed_video_decision === true
+    || eligible?.signed_video_decision === true
+    || openRequest?.signed_video_decision === true;
+
+  // Video Path A/B only after a signed VIDEO_CONSULTATION decision (or an active video row).
+  // BOTH referrals labeled "Video Consultation" stay on hospital confirm until then.
+  const usesVideoCoordination = (appointment, eligible, openRequest) => {
+    if (appointment.has_active_video_consultation) return true;
+    if (appointment.referral_mode === "VIDEO_CONSULT") return true;
+    if (!isVideoLabeledAppointment(appointment)) return false;
+    return hasSignedVideoDecisionForAppointment(appointment, eligible, openRequest);
+  };
+
+  const findEligibleReferralForAppointment = (appointment) =>
+    eligibleVideoReferrals.find((referral) => referral.referral_id === appointment.referral_id);
+
+  const findAvailabilityRequestForAppointment = (appointment) =>
+    videoAvailabilityRequests.find((request) => request.referral_id === appointment.referral_id);
 
   const openHistory = async (appointmentId) => {
     setHistory({ id: appointmentId, loading: true, items: [] });
@@ -364,57 +411,59 @@ export default function HospitalStaffDashboard() {
                   </dl>
                   {referral.signed_video_decision === true ? (
                     <>
-                      {referral.available_slots?.length > 0 && (
-                        <>
+                      {referral.available_slots?.length > 0 ? (
+                        <form
+                          className="hospital-staff-action-form"
+                          onSubmit={(event) => submitDirectVideoSlot(event, referral.referral_id)}
+                        >
                           <h4>{t("hospitalStaff.existingSpecialistSlots")}</h4>
-                          <form
-                            className="hospital-staff-action-form"
-                            onSubmit={(event) => submitDirectVideoSlot(event, referral.referral_id)}
-                          >
-                            <label>{t("hospitalStaff.alternativeSpecialistSlot")}
-                              <select name="slot_id" required defaultValue="">
-                                <option value="" disabled>{t("hospitalStaff.selectAlternativeSlot")}</option>
-                                {referral.available_slots.map((slot) => (
-                                  <option key={slot.id} value={slot.id}>
-                                    {formatLocalizedDateTime(slot.slot_start, language)} – {formatLocalizedDateTime(slot.slot_end, language)}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                            <div className="hospital-staff-actions">
-                              <Button
-                                type="submit"
-                                size="sm"
-                                loading={busy === `video-slot-${referral.referral_id}`}
-                                disabled={Boolean(busy)}
-                              >
-                                {t("hospitalStaff.confirmExistingSlot")}
-                              </Button>
-                            </div>
-                          </form>
-                        </>
+                          <p role="note">{t("hospitalStaff.publishedSlotDirectConfirmHint")}</p>
+                          <label>{t("hospitalStaff.alternativeSpecialistSlot")}
+                            <select name="slot_id" required defaultValue="">
+                              <option value="" disabled>{t("hospitalStaff.selectAlternativeSlot")}</option>
+                              {referral.available_slots.map((slot) => (
+                                <option key={slot.id} value={slot.id}>
+                                  {formatLocalizedDateTime(slot.slot_start, language)} – {formatLocalizedDateTime(slot.slot_end, language)}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <div className="hospital-staff-actions">
+                            <Button
+                              type="submit"
+                              size="sm"
+                              loading={busy === `video-slot-${referral.referral_id}`}
+                              disabled={Boolean(busy)
+                                || referral.teleconsult_consent_status !== "ACTIVE"}
+                            >
+                              {t("hospitalStaff.confirmExistingSlot")}
+                            </Button>
+                          </div>
+                        </form>
+                      ) : (
+                        <form
+                          className="hospital-staff-action-form"
+                          onSubmit={(event) => submitAvailabilityRequest(event, referral.referral_id)}
+                        >
+                          <p role="note">{t("hospitalStaff.noSlotRequestSpecialistHint")}</p>
+                          <label>{t("hospitalStaff.requestedDateTime")}
+                            <input name="requested_start" type="datetime-local" required min={localDateTimeMin()} />
+                          </label>
+                          <label>{t("hospitalStaff.requestedEndTime")}
+                            <input name="requested_end" type="datetime-local" required min={localDateTimeMin()} />
+                          </label>
+                          <div className="hospital-staff-actions">
+                            <Button
+                              type="submit"
+                              size="sm"
+                              loading={busy === `availability-create-${referral.referral_id}`}
+                              disabled={Boolean(busy)}
+                            >
+                              {t("hospitalStaff.sendAvailabilityRequest")}
+                            </Button>
+                          </div>
+                        </form>
                       )}
-                      <form
-                        className="hospital-staff-action-form"
-                        onSubmit={(event) => submitAvailabilityRequest(event, referral.referral_id)}
-                      >
-                        <label>{t("hospitalStaff.requestedDateTime")}
-                          <input name="requested_start" type="datetime-local" required min={localDateTimeMin()} />
-                        </label>
-                        <label>{t("hospitalStaff.requestedEndTime")}
-                          <input name="requested_end" type="datetime-local" required min={localDateTimeMin()} />
-                        </label>
-                        <div className="hospital-staff-actions">
-                          <Button
-                            type="submit"
-                            size="sm"
-                            loading={busy === `availability-create-${referral.referral_id}`}
-                            disabled={Boolean(busy)}
-                          >
-                            {t("hospitalStaff.sendAvailabilityRequest")}
-                          </Button>
-                        </div>
-                      </form>
                     </>
                   ) : (
                     <p role="note">{t("hospitalStaff.videoDecisionRequired")}</p>
@@ -477,7 +526,7 @@ export default function HospitalStaffDashboard() {
                       )}
                     </dl>
                     {request.response_reason && <p>{request.response_reason}</p>}
-                    {request.alternative_slots?.length > 0 && (
+                    {request.status !== "STAFF_REVIEW" && request.alternative_slots?.length > 0 && (
                       <div className="hospital-staff-video-alternatives">
                         <p>{t("hospitalStaff.alternativeSpecialistSlot")}</p>
                         <ul>
@@ -495,11 +544,54 @@ export default function HospitalStaffDashboard() {
                     {request.status === "STAFF_REVIEW" && <p role="status">{t("hospitalStaff.waitingForStaffReview")}</p>}
                     {request.status === "PENDING" && <p role="status">{t("hospitalStaff.waitingForSpecialistResponse")}</p>}
                     {request.status === "DECLINED" && <p role="status">{t("hospitalStaff.specialistDeclinedAvailability")}</p>}
+                    {request.status === "STAFF_REVIEW" && (
+                      <p role="note">{t(
+                        request.alternative_slots?.length > 0
+                          ? "hospitalStaff.staffReviewConfirmHint"
+                          : "hospitalStaff.staffReviewForwardHint"
+                      )}</p>
+                    )}
+                    {request.status === "STAFF_REVIEW" && request.alternative_slots?.length > 0 && (
+                      <form
+                        className="hospital-staff-action-form hospital-staff-video-alternatives"
+                        onSubmit={(event) => submitDirectVideoSlot(event, request.referral_id)}
+                      >
+                        <h4>{t("hospitalStaff.existingSpecialistSlots")}</h4>
+                        <p role="note">{t("hospitalStaff.publishedSlotDirectConfirmHint")}</p>
+                        <label>{t("hospitalStaff.alternativeSpecialistSlot")}
+                          <select name="slot_id" required defaultValue="">
+                            <option value="" disabled>{t("hospitalStaff.selectAlternativeSlot")}</option>
+                            {request.alternative_slots.map((slot) => (
+                              <option key={slot.id} value={slot.id}>
+                                {formatLocalizedDateTime(slot.slot_start, language)} – {formatLocalizedDateTime(slot.slot_end, language)}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <div className="hospital-staff-actions">
+                          <Button
+                            type="submit"
+                            size="sm"
+                            loading={busy === `video-slot-${request.referral_id}`}
+                            disabled={Boolean(busy)
+                              || request.teleconsult_consent_status !== "ACTIVE"
+                              || request.signed_video_decision !== true}
+                          >
+                            {t("hospitalStaff.confirmExistingSlot")}
+                          </Button>
+                        </div>
+                      </form>
+                    )}
+                    {request.status === "STAFF_REVIEW"
+                      && (!request.alternative_slots || request.alternative_slots.length === 0) && (
+                      <p role="status">{t("hospitalStaff.noPublishedSlotsForwardHint")}</p>
+                    )}
                     <div className="hospital-staff-actions">
                       {request.status === "STAFF_REVIEW" && (
                         <Button
                           type="button"
                           size="sm"
+                          variant="secondary"
                           loading={busy === `availability-${request.id}`}
                           disabled={Boolean(busy)}
                           onClick={() => submitAvailabilityAction(request.id, "forward")}
@@ -644,10 +736,11 @@ export default function HospitalStaffDashboard() {
           ) : videoConsultations.length ? (
             <div className="hospital-staff-list">
               {videoConsultations.map((consultation) => {
-                const canConfirm = ["REQUESTED", "RESCHEDULED"].includes(consultation.status_code)
-                  && consultation.availability_status === "RESERVED"
-                  && consultation.teleconsult_consent_status === "ACTIVE";
                 const alternatives = consultation.alternative_slots || [];
+                const linkedAcceptedRequest = videoAvailabilityRequests.find((request) =>
+                  request.referral_id === consultation.referral_id
+                  && ["ACCEPTED", "SUGGESTED"].includes(request.status)
+                );
                 return (
                   <article className="hospital-staff-card hospital-staff-video-card" key={consultation.id}>
                     <div className="hospital-staff-card-heading">
@@ -679,15 +772,21 @@ export default function HospitalStaffDashboard() {
 
                     <div className="hospital-staff-actions">
                       {["REQUESTED", "RESCHEDULED"].includes(consultation.status_code) && (
-                        <Button
-                          type="button"
-                          size="sm"
-                          loading={busy === `video-${consultation.id}`}
-                          disabled={Boolean(busy) || !canConfirm}
-                          onClick={() => submitVideoAction(consultation.id, "confirm")}
-                        >
-                          {t("hospitalStaff.confirmAppointment")}
-                        </Button>
+                        linkedAcceptedRequest ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => {
+                              document.getElementById(`video-availability-request-${linkedAcceptedRequest.id}`)
+                                ?.scrollIntoView({ behavior: "smooth", block: "center" });
+                            }}
+                          >
+                            {t("hospitalStaff.openAvailabilityRequest")}
+                          </Button>
+                        ) : (
+                          <p role="note">{t("hospitalStaff.videoConfirmRequiresSpecialistApproval")}</p>
+                        )
                       )}
                       {consultation.status_code === "CANCELLED"
                         && consultation.signed_video_decision === true
@@ -727,8 +826,12 @@ export default function HospitalStaffDashboard() {
                           {publishedSlots.length ? (
                             <form
                               className="hospital-staff-action-form"
-                              onSubmit={(event) => submitDirectVideoSlot(event, consultation.referral_id)}
+                              onSubmit={(event) => submitDirectVideoSlot(
+                                event,
+                                consultation.referral_id
+                              )}
                             >
+                              <p role="note">{t("hospitalStaff.publishedSlotDirectConfirmHint")}</p>
                               <label>{t("hospitalStaff.alternativeSpecialistSlot")}
                                 <select name="slot_id" required defaultValue="">
                                   <option value="" disabled>{t("hospitalStaff.selectAlternativeSlot")}</option>
@@ -744,7 +847,8 @@ export default function HospitalStaffDashboard() {
                                   type="submit"
                                   size="sm"
                                   loading={busy === `video-slot-${consultation.referral_id}`}
-                                  disabled={Boolean(busy)}
+                                  disabled={Boolean(busy)
+                                    || consultation.teleconsult_consent_status !== "ACTIVE"}
                                 >
                                   {t("hospitalStaff.confirmExistingSlot")}
                                 </Button>
@@ -794,14 +898,16 @@ export default function HospitalStaffDashboard() {
                             <p role="alert">{t("hospitalStaff.videoConsentRequired")}</p>
                           )}
                           {alternatives.length ? (
-                            <form className="hospital-staff-action-form" onSubmit={(event) => {
-                              event.preventDefault();
-                              const formData = new FormData(event.currentTarget);
-                              submitVideoAction(consultation.id, "reschedule", {
-                                slot_id: formData.get("slot_id"),
-                                reason: formData.get("reason"),
-                              });
-                            }}>
+                            <form
+                              className="hospital-staff-action-form"
+                              onSubmit={(event) => submitPublishedSlotApprovalRequest(
+                                event,
+                                consultation.referral_id,
+                                alternatives,
+                                consultation.id
+                              )}
+                            >
+                              <p role="note">{t("hospitalStaff.publishedSlotApprovalHint")}</p>
                               <label>{t("hospitalStaff.alternativeSpecialistSlot")}
                                 <select name="slot_id" required defaultValue="">
                                   <option value="" disabled>{t("hospitalStaff.selectAlternativeSlot")}</option>
@@ -812,17 +918,16 @@ export default function HospitalStaffDashboard() {
                                   ))}
                                 </select>
                               </label>
-                              <label>{t("hospitalStaff.rescheduleReason")}
-                                <textarea name="reason" rows="2" maxLength="1000" required />
-                              </label>
                               <div className="hospital-staff-actions">
                                 <Button
                                   type="submit"
                                   size="sm"
-                                  loading={busy === `video-${consultation.id}`}
-                                  disabled={Boolean(busy) || consultation.teleconsult_consent_status !== "ACTIVE"}
+                                  loading={busy === `availability-create-${consultation.referral_id}`}
+                                  disabled={Boolean(busy)
+                                    || consultation.teleconsult_consent_status !== "ACTIVE"
+                                    || consultation.signed_video_decision !== true}
                                 >
-                                  {t("hospitalStaff.rescheduleVideoRequest")}
+                                  {t("hospitalStaff.requestSlotApproval")}
                                 </Button>
                               </div>
                             </form>
@@ -908,18 +1013,153 @@ export default function HospitalStaffDashboard() {
               <div className="hospital-staff-actions">
                 {appointment.status_code === "REQUESTED" && (
                   <>
-                    {!isVideoConsultationAppointment(appointment) ? (
-                      <>
-                        <Button type="button" size="sm" loading={busy === appointment.id}
-                          disabled={Boolean(busy)} onClick={() => submitAction(appointment.id, "confirm")}>
-                          {t("hospitalStaff.confirm")}
-                        </Button>
-                        <Button type="button" size="sm" variant="secondary"
-                          onClick={() => setAction({ id: appointment.id, type: "reschedule" })}>
-                          {t("hospitalStaff.reschedule")}
-                        </Button>
-                      </>
-                    ) : <p role="status">{t("hospitalStaff.videoRequestUseQueue")}</p>}
+                    {(() => {
+                      const eligible = findEligibleReferralForAppointment(appointment);
+                      const openRequest = findAvailabilityRequestForAppointment(appointment);
+                      const signedVideo = hasSignedVideoDecisionForAppointment(
+                        appointment,
+                        eligible,
+                        openRequest
+                      );
+                      if (!usesVideoCoordination(appointment, eligible, openRequest)) {
+                        return (
+                          <>
+                            <Button type="button" size="sm" loading={busy === appointment.id}
+                              disabled={Boolean(busy)} onClick={() => submitAction(appointment.id, "confirm")}>
+                              {t("hospitalStaff.confirm")}
+                            </Button>
+                            <Button type="button" size="sm" variant="secondary"
+                              onClick={() => setAction({ id: appointment.id, type: "reschedule" })}>
+                              {t("hospitalStaff.reschedule")}
+                            </Button>
+                          </>
+                        );
+                      }
+                      if (!signedVideo) {
+                        return (
+                          <div className="hospital-staff-video-alternatives">
+                            <p role="note">{t("hospitalStaff.videoDecisionRequired")}</p>
+                          </div>
+                        );
+                      }
+                      const publishedSlots = eligible?.available_slots
+                        || openRequest?.alternative_slots
+                        || [];
+                      const consentActive = eligible
+                        ? eligible.teleconsult_consent_status === "ACTIVE"
+                        : openRequest?.teleconsult_consent_status === "ACTIVE";
+                      const canDirectConfirm = publishedSlots.length > 0
+                        && consentActive
+                        && (!openRequest
+                          || openRequest.status === "STAFF_REVIEW");
+                      const requestBlocked = openRequest
+                        && ["PENDING", "ACCEPTED", "SUGGESTED"].includes(openRequest.status);
+                      return (
+                        <div className="hospital-staff-video-alternatives">
+                          <p role="status">{t("hospitalStaff.navigatorRequestStaffHint")}</p>
+                          {canDirectConfirm ? (
+                            <form
+                              className="hospital-staff-action-form"
+                              onSubmit={(event) => submitDirectVideoSlot(
+                                event,
+                                appointment.referral_id
+                              )}
+                            >
+                              <h4>{t("hospitalStaff.existingSpecialistSlots")}</h4>
+                              <p role="note">{t("hospitalStaff.publishedSlotDirectConfirmHint")}</p>
+                              <label>{t("hospitalStaff.alternativeSpecialistSlot")}
+                                <select name="slot_id" required defaultValue="">
+                                  <option value="" disabled>{t("hospitalStaff.selectAlternativeSlot")}</option>
+                                  {publishedSlots.map((slot) => (
+                                    <option key={slot.id} value={slot.id}>
+                                      {formatLocalizedDateTime(slot.slot_start, language)} – {formatLocalizedDateTime(slot.slot_end, language)}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                              <div className="hospital-staff-actions">
+                                <Button
+                                  type="submit"
+                                  size="sm"
+                                  loading={busy === `video-slot-${appointment.referral_id}`}
+                                  disabled={Boolean(busy)}
+                                >
+                                  {t("hospitalStaff.confirmExistingSlot")}
+                                </Button>
+                                {openRequest?.id && (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="secondary"
+                                    onClick={() => {
+                                      document.getElementById(`video-availability-request-${openRequest.id}`)
+                                        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+                                    }}
+                                  >
+                                    {t("hospitalStaff.openAvailabilityRequest")}
+                                  </Button>
+                                )}
+                              </div>
+                            </form>
+                          ) : (
+                            <form
+                              className="hospital-staff-action-form"
+                              onSubmit={(event) => submitAvailabilityRequest(
+                                event,
+                                appointment.referral_id
+                              )}
+                            >
+                              <p role="note">{t(
+                                requestBlocked
+                                  ? "hospitalStaff.openAvailabilityRequest"
+                                  : "hospitalStaff.noSlotRequestSpecialistHint"
+                              )}</p>
+                              {!requestBlocked && (
+                                <>
+                                  <label>{t("hospitalStaff.requestedDateTime")}
+                                    <input
+                                      name="requested_start"
+                                      type="datetime-local"
+                                      required
+                                      min={localDateTimeMin()}
+                                      defaultValue={dateTimeLocalValue(appointment.scheduled_at)}
+                                    />
+                                  </label>
+                                  <label>{t("hospitalStaff.requestedEndTime")}
+                                    <input name="requested_end" type="datetime-local" required min={localDateTimeMin()} />
+                                  </label>
+                                </>
+                              )}
+                              <div className="hospital-staff-actions">
+                                {!requestBlocked && (
+                                  <Button
+                                    type="submit"
+                                    size="sm"
+                                    loading={busy === `availability-create-${appointment.referral_id}`}
+                                    disabled={Boolean(busy)}
+                                  >
+                                    {t("hospitalStaff.sendAvailabilityRequest")}
+                                  </Button>
+                                )}
+                                {openRequest?.id && (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="secondary"
+                                    onClick={() => {
+                                      document.getElementById(`video-availability-request-${openRequest.id}`)
+                                        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+                                    }}
+                                  >
+                                    {t("hospitalStaff.openAvailabilityRequest")}
+                                  </Button>
+                                )}
+                              </div>
+                            </form>
+                          )}
+                        </div>
+                      );
+                    })()}
                     <Button type="button" size="sm" variant="secondary"
                       onClick={() => setAction({ id: appointment.id, type: "cancel" })}>
                       {t("hospitalStaff.cancel")}
@@ -928,7 +1168,11 @@ export default function HospitalStaffDashboard() {
                 )}
                 {appointment.status_code === "CONFIRMED" && (
                   <>
-                    {!isVideoConsultationAppointment(appointment) && (
+                    {!usesVideoCoordination(
+                      appointment,
+                      findEligibleReferralForAppointment(appointment),
+                      findAvailabilityRequestForAppointment(appointment)
+                    ) && (
                       <>
                         <Button type="button" size="sm" variant="secondary"
                           onClick={() => setAction({ id: appointment.id, type: "attendance" })}>

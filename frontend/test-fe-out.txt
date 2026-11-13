@@ -1,0 +1,8 @@
+﻿npx : 'SpecialistAppointments.test' is not recognized as an internal or external command,
+At line:1 char:46
++ ... i\frontend; npx react-scripts test --watchAll=false --testPathPattern ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ('SpecialistAppo...ternal command,:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+operable program or batch file.

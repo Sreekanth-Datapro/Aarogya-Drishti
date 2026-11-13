@@ -31,6 +31,8 @@ describe("system administrator navigation", () => {
     );
     expect(getModulesForRole("DISTRICT_ADMIN").map((module) => module.key))
       .toContain("districtHospitalStaff");
+    expect(getModulesForRole("DISTRICT_ADMIN").map((module) => module.key))
+      .toContain("districtCustomAccounts");
     expect(getModulesForRole("HOSPITAL_STAFF").map((module) => module.key))
       .toEqual(["appointments", "hsDiagnostics", "hsTracking", "attendance"]);
     expect(getModulesForRole("DISTRICT_ADMIN").map((module) => module.key))
@@ -56,5 +58,17 @@ describe("system administrator navigation", () => {
     });
     expect(modules.map((module) => module.key))
       .toEqual(["appointments", "hsDiagnostics", "hsTracking", "attendance"]);
+  });
+
+  test("DISTRICT_ADMIN keeps custom-account provisioning when page permissions omit it", () => {
+    const modules = getModulesForUser({
+      role: "DISTRICT_ADMIN",
+      permissions: ["page.districtMedicalOfficers", "page.districtHospitalStaff"],
+    });
+    expect(modules.map((module) => module.key)).toEqual(expect.arrayContaining([
+      "districtMedicalOfficers",
+      "districtHospitalStaff",
+      "districtCustomAccounts",
+    ]));
   });
 });

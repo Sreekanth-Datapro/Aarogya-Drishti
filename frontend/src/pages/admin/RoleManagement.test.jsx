@@ -241,3 +241,27 @@ test("does not submit a role change if confirmation is declined", async () => {
   expect(window.confirm).toHaveBeenCalled();
   expect(api.patch).not.toHaveBeenCalled();
 });
+
+test("SYSTEM_ADMIN can open Role Management and see View-labeled screen matrix", async () => {
+  useAuth.mockReturnValue({ user: { id: "sys-1", role: "SYSTEM_ADMIN" } });
+  renderPage();
+  expect(await screen.findByText("roleManagement.pagesPanelTitle")).toBeInTheDocument();
+  expect(screen.getByText("roleManagement.pagesPanelHint")).toBeInTheDocument();
+  const pagesPanel = screen.getByRole("region", { name: "roleManagement.pagesPanelTitle" });
+  expect(within(pagesPanel).getAllByText("roleManagement.action.view").length).toBeGreaterThan(0);
+  expect(screen.getByText("roleManagement.actionColumnLocked")).toBeInTheDocument();
+});
+
+test("selected custom role shows View checkbox and locked action columns", async () => {
+  renderPage();
+  await screen.findAllByText("CUSTOM_AUDITOR");
+  const editButtons = screen.getAllByRole("button", { name: "roleManagement.edit" });
+  fireEvent.click(editButtons[0]);
+
+  const screenMatrix = await screen.findByRole("region", { name: "roleManagement.screenPermissionMatrix" });
+  expect(within(screenMatrix).getByText("roleManagement.action.view")).toBeInTheDocument();
+  expect(within(screenMatrix).getByText("roleManagement.action.create")).toBeInTheDocument();
+  expect(within(screenMatrix).getByRole("checkbox", { name: "CUSTOM_AUDITOR page.reports view" })).toBeEnabled();
+  expect(within(screenMatrix).getByRole("checkbox", { name: "CUSTOM_AUDITOR page.roleManagement view" })).toBeDisabled();
+  expect(within(screenMatrix).getAllByText("roleManagement.actionNotApplicable").length).toBeGreaterThan(0);
+});

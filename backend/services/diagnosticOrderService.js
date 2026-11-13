@@ -426,6 +426,7 @@ async function listFacilities(userId, roleName) {
   return { facilities: rows };
 }
 
+// Base select works without migration 039. Workflow columns are enriched separately when present.
 const ORDER_SELECT = `
   SELECT diagnostic_order.id, diagnostic_order.order_code, diagnostic_order.patient_id,
          diagnostic_order.referral_id, diagnostic_order.facility_id,
@@ -447,6 +448,107 @@ const ORDER_SELECT = `
     LEFT JOIN tbl_referrals referral ON referral.id = diagnostic_order.referral_id
 `;
 
+let workflowColumnsReady = null;
+
+async function hasWorkflowColumns(clientOrPool = pool) {
+  if (workflowColumnsReady !== null) return workflowColumnsReady;
+
+  // Probe the full enrichment column set — partial 039 applies can leave
+  // workflow_status present while requested_date / collection_* are still missing.
+  const probeSql = `SELECT workflow_status, assigned_health_worker_id, requested_date,
+          collection_scan_date, collection_centre, collection_notes, returned_reason,
+          forwarded_to_hs_by, forwarded_to_hs_at, routed_to_specialist_by,
+          routed_to_specialist_at, advice_forwarded_to_hw_by, advice_forwarded_to_hw_at
+     FROM tbl_diagnostic_orders LIMIT 0`;
+  // Transaction clients expose release(); pool does not. Failed probes inside a
+  // transaction must use SAVEPOINT or PostgreSQL aborts with 25P02.
+  const isTxClient = typeof clientOrPool.release === "function";
+
+  if (!isTxClient) {
+    try {
+      await clientOrPool.query(probeSql);
+      workflowColumnsReady = true;
+    } catch (_error) {
+      workflowColumnsReady = false;
+    }
+    return workflowColumnsReady;
+  }
+
+  await clientOrPool.query("SAVEPOINT workflow_columns_probe");
+  try {
+    await clientOrPool.query(probeSql);
+    await clientOrPool.query("RELEASE SAVEPOINT workflow_columns_probe");
+    workflowColumnsReady = true;
+  } catch (_error) {
+    await clientOrPool.query("ROLLBACK TO SAVEPOINT workflow_columns_probe").catch(() => {});
+    workflowColumnsReady = false;
+  }
+  return workflowColumnsReady;
+}
+
+async function enrichOrderWorkflowFields(clientOrPool, order) {
+  if (!order?.id) return order;
+  if (!(await hasWorkflowColumns(clientOrPool))) {
+    return {
+      ...order,
+      workflow_status: order.workflow_status || null,
+      assigned_health_worker_id: order.assigned_health_worker_id || null,
+      assigned_health_worker_name: order.assigned_health_worker_name || null,
+      requested_date: null,
+      collection_scan_date: null,
+      collection_centre: null,
+      collection_notes: null,
+      returned_reason: null,
+    };
+  }
+  const isTxClient = typeof clientOrPool.release === "function";
+  if (isTxClient) {
+    await clientOrPool.query("SAVEPOINT workflow_enrich_select");
+  }
+  try {
+    const { rows } = await clientOrPool.query(
+      `SELECT diagnostic_order.workflow_status,
+              diagnostic_order.assigned_health_worker_id,
+              diagnostic_order.requested_date,
+              diagnostic_order.collection_scan_date,
+              diagnostic_order.collection_centre,
+              diagnostic_order.collection_notes,
+              diagnostic_order.returned_reason,
+              diagnostic_order.forwarded_to_hs_by,
+              diagnostic_order.forwarded_to_hs_at,
+              diagnostic_order.routed_to_specialist_by,
+              diagnostic_order.routed_to_specialist_at,
+              diagnostic_order.advice_forwarded_to_hw_by,
+              diagnostic_order.advice_forwarded_to_hw_at,
+              hw.full_name AS assigned_health_worker_name
+         FROM tbl_diagnostic_orders diagnostic_order
+         LEFT JOIN tbl_users hw ON hw.id = diagnostic_order.assigned_health_worker_id
+        WHERE diagnostic_order.id = $1`,
+      [order.id]
+    );
+    if (isTxClient) {
+      await clientOrPool.query("RELEASE SAVEPOINT workflow_enrich_select");
+    }
+    return rows[0] ? { ...order, ...rows[0] } : order;
+  } catch (_error) {
+    if (isTxClient) {
+      await clientOrPool.query("ROLLBACK TO SAVEPOINT workflow_enrich_select").catch(() => {});
+    }
+    workflowColumnsReady = false;
+    return {
+      ...order,
+      workflow_status: order.workflow_status || null,
+      assigned_health_worker_id: order.assigned_health_worker_id || null,
+      assigned_health_worker_name: null,
+      requested_date: null,
+      collection_scan_date: null,
+      collection_centre: null,
+      collection_notes: null,
+      returned_reason: null,
+    };
+  }
+}
+
 async function loadOrderItems(clientOrPool, orderId) {
   const { rows } = await clientOrPool.query(
     `SELECT item.id, item.order_id, item.test_id, item.clinical_reason, item.priority,
@@ -465,7 +567,7 @@ async function loadOrderItems(clientOrPool, orderId) {
   return rows;
 }
 
-async function createOrder(userId, req, input = {}) {
+async function createOrder(userId, req, input = {}, options = {}) {
   const patientId = requireUuid(input.patient_id, "Invalid patient ID");
   const facilityId = requirePositiveId(input.facility_id, "Invalid facility ID");
   const referralId = input.referral_id
@@ -473,6 +575,9 @@ async function createOrder(userId, req, input = {}) {
     : null;
   const notes = trimText(input.notes, "Notes", { max: 2000 });
   const idempotencyKey = trimText(input.idempotency_key, "Idempotency key", { max: 100 });
+  const reassessmentSourceOrderId = input.reassessment_source_order_id
+    ? requireUuid(input.reassessment_source_order_id, "Invalid source order ID")
+    : null;
   const items = Array.isArray(input.items) ? input.items : [];
   if (!items.length) {
     throw new HttpError(400, "Add at least one diagnostic test", "VALIDATION_ERROR");
@@ -493,8 +598,7 @@ async function createOrder(userId, req, input = {}) {
     throw new HttpError(400, "Each test may appear only once in an order", "DUPLICATE_TEST");
   }
 
-  try {
-    return await withTransaction(pool, async (client) => {
+  const runCreate = async (client) => {
       await setActor(client, userId);
       if (!(await hasConsent(client, patientId, "DATA_PROCESSING"))) {
         throw new HttpError(403, "The patient has no active DATA_PROCESSING consent", "CONSENT_REQUIRED");
@@ -552,6 +656,21 @@ async function createOrder(userId, req, input = {}) {
         ]
       );
       const order = orderRows[0];
+      if (reassessmentSourceOrderId) {
+        try {
+          await client.query(
+            `UPDATE tbl_diagnostic_orders
+                SET reassessment_source_order_id = $2
+              WHERE id = $1`,
+            [order.id, reassessmentSourceOrderId]
+          );
+        } catch (linkError) {
+          if (!(linkError && (linkError.code === "42703"
+              || /column .* does not exist/i.test(linkError.message || "")))) {
+            throw linkError;
+          }
+        }
+      }
 
       for (const item of normalizedItems) {
         const { rows: itemRows } = await client.query(
@@ -593,6 +712,8 @@ async function createOrder(userId, req, input = {}) {
         patientId,
         referral?.assigned_navigator_id || null
       );
+      // Navigator is the central coordinator. Do NOT notify Health Worker here —
+      // Navigator assigns the authorized HW after reviewing the Specialist request.
       await notifyNavigator(client, {
         navigatorId,
         patientId,
@@ -600,13 +721,22 @@ async function createOrder(userId, req, input = {}) {
         orderCode: order.order_code,
         patientCode: patientRows[0]?.patient_code,
       });
-      await notifyHealthWorkerOrder(client, {
-        healthWorkerId: patientRows[0]?.registered_by || null,
-        patientId,
-        orderId: order.id,
-        orderCode: order.order_code,
-        patientCode: patientRows[0]?.patient_code,
-      });
+      try {
+        await client.query(
+          `UPDATE tbl_diagnostic_orders
+              SET workflow_status = $2,
+                  requested_date = COALESCE(requested_date, CURRENT_DATE),
+                  updated_at = now()
+            WHERE id = $1`,
+          [order.id, "NAVIGATOR_RECEIVED"]
+        );
+      } catch (workflowError) {
+        // Migration 039 not applied yet — coarse ADVISED status still stands.
+        if (!(workflowError && (workflowError.code === "42703"
+            || /column .* does not exist/i.test(workflowError.message || "")))) {
+          throw workflowError;
+        }
+      }
 
       await audit(req, {
         client,
@@ -620,6 +750,7 @@ async function createOrder(userId, req, input = {}) {
           facility_id: facilityId,
           item_count: normalizedItems.length,
           referral_id: order.referral_id,
+          workflow_status: "NAVIGATOR_RECEIVED",
         },
       });
 
@@ -628,10 +759,18 @@ async function createOrder(userId, req, input = {}) {
         order: {
           ...order,
           status_code: "ADVISED",
+          workflow_status: "NAVIGATOR_RECEIVED",
+          reassessment_source_order_id: reassessmentSourceOrderId,
           items: itemsOut,
         },
       };
-    });
+  };
+
+  try {
+    if (options.client) {
+      return await runCreate(options.client);
+    }
+    return await withTransaction(pool, runCreate);
   } catch (error) {
     if (error.code === "23505") {
       throw new HttpError(409, "This diagnostic order was already submitted", "DUPLICATE_ORDER");
@@ -680,20 +819,35 @@ async function getOrderForUser(userId, roleName, orderId, { client = pool } = {}
            AND assignment.valid_from <= now()
            AND (assignment.valid_to IS NULL OR assignment.valid_to > now())
       )
+      OR EXISTS (
+        SELECT 1 FROM tbl_referrals linked_referral
+         WHERE linked_referral.id = diagnostic_order.referral_id
+           AND linked_referral.assigned_specialist_id = $1
+      )
     )`;
   } else if (roleName === "HOSPITAL_STAFF") {
-    scopeSql = `AND EXISTS (
-      SELECT 1 FROM tbl_user_facility_assignments assignment
-       WHERE assignment.user_id = $1
-         AND assignment.facility_id = diagnostic_order.facility_id
-         AND assignment.valid_from <= CURRENT_DATE
-         AND (assignment.valid_to IS NULL OR assignment.valid_to >= CURRENT_DATE)
+    scopeSql = `AND (
+      EXISTS (
+        SELECT 1 FROM tbl_user_facility_assignments assignment
+         WHERE assignment.user_id = $1
+           AND assignment.facility_id = diagnostic_order.facility_id
+           AND assignment.valid_from <= CURRENT_DATE
+           AND (assignment.valid_to IS NULL OR assignment.valid_to >= CURRENT_DATE)
+      )
+      OR fn_user_has_patient_access($1, diagnostic_order.patient_id)
     )`;
   } else if (roleName === "HEALTH_WORKER") {
     scopeSql = `AND (
       patient.registered_by = $1
       OR fn_user_has_patient_access($1, diagnostic_order.patient_id)
     )`;
+    if (await hasWorkflowColumns(client)) {
+      scopeSql = `AND (
+        diagnostic_order.assigned_health_worker_id = $1
+        OR patient.registered_by = $1
+        OR fn_user_has_patient_access($1, diagnostic_order.patient_id)
+      )`;
+    }
   } else if (!["SYSTEM_ADMIN", "SUPER_ADMIN"].includes(roleName)) {
     throw new HttpError(403, "You are not allowed to view diagnostic orders", "FORBIDDEN");
   }
@@ -707,6 +861,7 @@ async function getOrderForUser(userId, roleName, orderId, { client = pool } = {}
   if (!rows.length) {
     throw new HttpError(404, "Diagnostic order not found", "NOT_FOUND");
   }
+  const orderRow = await enrichOrderWorkflowFields(client, rows[0]);
   const items = await loadOrderItems(client, id);
   const history = await client.query(
     `SELECT history.id, history.order_id, history.item_id,
@@ -722,7 +877,14 @@ async function getOrderForUser(userId, roleName, orderId, { client = pool } = {}
       ORDER BY history.changed_at, history.id`,
     [id]
   );
+  // GET /orders/:id uses the pool (autocommit). SAVEPOINT is only valid inside a
+  // transaction client (from withTransaction). Pool path: plain try/catch.
+  const inTransaction = typeof client.release === "function";
+
   let reports = [];
+  if (inTransaction) {
+    await client.query("SAVEPOINT diagnostic_order_reports_load");
+  }
   try {
     const reportRows = await client.query(
       `SELECT report.id, report.mime_type, report.original_filename, report.file_size_bytes,
@@ -738,12 +900,182 @@ async function getOrderForUser(userId, roleName, orderId, { client = pool } = {}
       [id]
     );
     reports = reportRows.rows;
+    if (inTransaction) {
+      await client.query("RELEASE SAVEPOINT diagnostic_order_reports_load");
+    }
   } catch (error) {
+    if (inTransaction) {
+      await client.query("ROLLBACK TO SAVEPOINT diagnostic_order_reports_load").catch(() => {});
+    }
     // Table may not exist until migration 034 is applied.
     if (error?.code !== "42P01") throw error;
   }
 
-  return { order: { ...rows[0], items, history: history.rows, reports } };
+  let advice = null;
+  let adviceHistory = [];
+  let followups = [];
+  if (inTransaction) {
+    await client.query("SAVEPOINT diagnostic_order_advice_load");
+  }
+  try {
+    const adviceRows = await client.query(
+      `SELECT advice.id, advice.findings, advice.precautions, advice.treatment_advice,
+              advice.medicine_name, advice.dosage, advice.duration_text,
+              advice.follow_up_instructions, advice.additional_diagnostics_needed,
+              advice.additional_diagnostics_notes, advice.status, advice.signed_at,
+              advice.version_no, advice.is_current, advice.follow_up_required,
+              advice.follow_up_due_date, advice.reassessment_instructions,
+              advice.closure_reason, advice.supersedes_advice_id, advice.created_at,
+              specialist.full_name AS specialist_name
+         FROM tbl_diagnostic_advice advice
+         JOIN tbl_users specialist ON specialist.id = advice.specialist_id
+        WHERE advice.order_id = $1
+        ORDER BY COALESCE(advice.version_no, 1) DESC, advice.created_at DESC`,
+      [id]
+    );
+    adviceHistory = adviceRows.rows;
+    advice = adviceHistory.find((row) => row.is_current !== false && row.status === "SIGNED")
+      || adviceHistory.find((row) => row.is_current !== false)
+      || adviceHistory[0]
+      || null;
+    if (inTransaction) {
+      await client.query("RELEASE SAVEPOINT diagnostic_order_advice_load");
+    }
+  } catch (error) {
+    if (inTransaction) {
+      await client.query("ROLLBACK TO SAVEPOINT diagnostic_order_advice_load").catch(() => {});
+    }
+    if (error?.code === "42703") {
+      // Pre-042 columns missing: fall back to single advice row.
+      try {
+        const adviceRows = await client.query(
+          `SELECT advice.id, advice.findings, advice.precautions, advice.treatment_advice,
+                  advice.medicine_name, advice.dosage, advice.duration_text,
+                  advice.follow_up_instructions, advice.additional_diagnostics_needed,
+                  advice.additional_diagnostics_notes, advice.status, advice.signed_at,
+                  specialist.full_name AS specialist_name
+             FROM tbl_diagnostic_advice advice
+             JOIN tbl_users specialist ON specialist.id = advice.specialist_id
+            WHERE advice.order_id = $1
+            LIMIT 1`,
+          [id]
+        );
+        advice = adviceRows.rows[0] || null;
+        adviceHistory = advice ? [advice] : [];
+      } catch (inner) {
+        if (inner?.code !== "42P01") throw inner;
+      }
+    } else if (error?.code !== "42P01") {
+      throw error;
+    }
+  }
+
+  if (inTransaction) {
+    await client.query("SAVEPOINT diagnostic_order_followups_load");
+  }
+  try {
+    const followupRows = await client.query(
+      `SELECT followup.*, hw.full_name AS health_worker_name
+         FROM tbl_diagnostic_advice_followups followup
+         JOIN tbl_users hw ON hw.id = followup.health_worker_id
+        WHERE followup.order_id = $1
+        ORDER BY followup.created_at DESC, followup.id DESC`,
+      [id]
+    );
+    followups = followupRows.rows;
+    if (inTransaction) {
+      await client.query("RELEASE SAVEPOINT diagnostic_order_followups_load");
+    }
+  } catch (error) {
+    if (inTransaction) {
+      await client.query("ROLLBACK TO SAVEPOINT diagnostic_order_followups_load").catch(() => {});
+    }
+    if (error?.code !== "42P01") throw error;
+  }
+
+  let followUpFlags = {
+    follow_up_due: false,
+    follow_up_overdue: false,
+    follow_up_due_date: advice?.follow_up_due_date || null,
+  };
+  if (advice?.follow_up_required && advice?.follow_up_due_date) {
+    const due = new Date(advice.follow_up_due_date);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    due.setHours(0, 0, 0, 0);
+    if (!Number.isNaN(due.getTime()) && due <= today) {
+      followUpFlags = {
+        follow_up_due: due.getTime() === today.getTime(),
+        follow_up_overdue: due < today,
+        follow_up_due_date: advice.follow_up_due_date,
+      };
+      // Due/overdue notifications are sent by the background scanner — not on GET.
+    }
+  }
+
+  const requiredDocuments = buildRequiredDocuments(items);
+  const reportsWithCategory = reports.map(attachDocumentCategory);
+  return {
+    order: {
+      ...orderRow,
+      items,
+      history: history.rows,
+      reports: reportsWithCategory,
+      advice,
+      advice_history: adviceHistory,
+      followups,
+      ...followUpFlags,
+      required_documents: requiredDocuments,
+    },
+  };
+}
+
+/**
+ * Required upload categories come ONLY from Specialist-ordered diagnostic items.
+ * Never invent global extras (e.g. Radiologist report) unless that test was ordered.
+ */
+function buildRequiredDocuments(items = []) {
+  const required = [];
+  const seen = new Set();
+  for (const item of items) {
+    const code = `TEST_${String(item.test_code || item.test_id).toUpperCase()}`;
+    if (seen.has(code)) {
+      // Same test ordered twice still needs only one file category; allow multiples.
+      const existing = required.find((row) => row.code === code);
+      if (existing) existing.min_files = Math.max(existing.min_files || 1, 1);
+      continue;
+    }
+    seen.add(code);
+    required.push({
+      code,
+      label: item.test_name || item.test_code || "Diagnostic test",
+      test_id: item.test_id,
+      item_id: item.id,
+      category_code: item.category_code || null,
+      min_files: 1,
+      allow_multiple: true,
+    });
+  }
+  return required;
+}
+
+const DOC_CATEGORY_PREFIX = /^\[DOC:([A-Z0-9_]+)\]\s*/i;
+
+function parseDocumentCategory(clinicalNotes) {
+  const match = String(clinicalNotes || "").match(DOC_CATEGORY_PREFIX);
+  return match ? match[1].toUpperCase() : null;
+}
+
+function attachDocumentCategory(report) {
+  if (!report) return report;
+  const fromNotes = parseDocumentCategory(report.clinical_notes);
+  return {
+    ...report,
+    document_category: report.document_category || fromNotes,
+    clinical_notes: fromNotes
+      ? String(report.clinical_notes || "").replace(DOC_CATEGORY_PREFIX, "").trim() || null
+      : report.clinical_notes,
+  };
 }
 
 async function listOrders(userId, roleName, query = {}) {
@@ -778,14 +1110,22 @@ async function listOrders(userId, roleName, query = {}) {
            AND assignment.valid_from <= now()
            AND (assignment.valid_to IS NULL OR assignment.valid_to > now())
       )
+      OR EXISTS (
+        SELECT 1 FROM tbl_referrals linked_referral
+         WHERE linked_referral.id = diagnostic_order.referral_id
+           AND linked_referral.assigned_specialist_id = $1
+      )
     )`;
   } else if (roleName === "HOSPITAL_STAFF") {
-    scopeSql = `AND EXISTS (
-      SELECT 1 FROM tbl_user_facility_assignments assignment
-       WHERE assignment.user_id = $1
-         AND assignment.facility_id = diagnostic_order.facility_id
-         AND assignment.valid_from <= CURRENT_DATE
-         AND (assignment.valid_to IS NULL OR assignment.valid_to >= CURRENT_DATE)
+    scopeSql = `AND (
+      EXISTS (
+        SELECT 1 FROM tbl_user_facility_assignments assignment
+         WHERE assignment.user_id = $1
+           AND assignment.facility_id = diagnostic_order.facility_id
+           AND assignment.valid_from <= CURRENT_DATE
+           AND (assignment.valid_to IS NULL OR assignment.valid_to >= CURRENT_DATE)
+      )
+      OR fn_user_has_patient_access($1, diagnostic_order.patient_id)
     )`;
   } else if (roleName === "HEALTH_WORKER") {
     scopeSql = `AND (
@@ -797,6 +1137,18 @@ async function listOrders(userId, roleName, query = {}) {
       )
       OR fn_user_has_patient_access($1, diagnostic_order.patient_id)
     )`;
+    if (await hasWorkflowColumns(pool)) {
+      scopeSql = `AND (
+        diagnostic_order.assigned_health_worker_id = $1
+        OR EXISTS (
+          SELECT 1 FROM tbl_patients patient
+           WHERE patient.id = diagnostic_order.patient_id
+             AND patient.registered_by = $1
+             AND patient.deleted_at IS NULL
+        )
+        OR fn_user_has_patient_access($1, diagnostic_order.patient_id)
+      )`;
+    }
   } else if (!["SYSTEM_ADMIN", "SUPER_ADMIN"].includes(roleName)) {
     throw new HttpError(403, "You are not allowed to list diagnostic orders", "FORBIDDEN");
   }
@@ -809,6 +1161,68 @@ async function listOrders(userId, roleName, query = {}) {
   }
   if (query.pending_only === "true" || query.pending_only === true) {
     scopeSql += " AND status.is_terminal IS FALSE";
+  }
+  if (query.awaiting_navigator === "true" || query.awaiting_navigator === true) {
+    // Reports submitted by HW and waiting for Navigator verify / return / forward.
+    scopeSql += ` AND EXISTS (
+      SELECT 1 FROM tbl_diagnostic_order_reports report
+       WHERE report.order_id = diagnostic_order.id
+    )
+    AND status.code NOT IN ('CANCELLED', 'CLINICIAN_REVIEWED')`;
+    if (await hasWorkflowColumns(pool)) {
+      scopeSql += ` AND (
+        diagnostic_order.workflow_status IN (
+          'REPORT_UPLOADED',
+          'NAVIGATOR_VERIFICATION',
+          'RETURNED_FOR_CORRECTION'
+        )
+        OR diagnostic_order.workflow_status IS NULL
+      )
+      AND COALESCE(diagnostic_order.workflow_status, '') NOT IN (
+        'SENT_TO_HOSPITAL_STAFF',
+        'SPECIALIST_REVIEW_PENDING',
+        'SPECIALIST_REVIEWED',
+        'ADVICE_SENT_TO_NAVIGATOR',
+        'SENT_TO_HEALTH_WORKER',
+        'PATIENT_FOLLOWUP',
+        'FOLLOWUP_REPORT_SUBMITTED',
+        'FOLLOWUP_RETURNED',
+        'REASSESSMENT_PENDING',
+        'FOLLOWUP_REQUIRED',
+        'VIDEO_CONSULTATION_REQUESTED',
+        'COMPLETED',
+        'CLOSED'
+      )`;
+    } else {
+      scopeSql += ` AND status.code IN ('REPORT_RECEIVED', 'REPORT_PENDING', 'SAMPLE_COLLECTED')`;
+    }
+  }
+
+  const filter = String(query.filter || "").toLowerCase();
+  if (filter && (await hasWorkflowColumns(pool))) {
+    if (filter === "reassessment_pending") {
+      scopeSql += ` AND diagnostic_order.workflow_status = 'REASSESSMENT_PENDING'`;
+    } else if (filter === "followup_report_submitted") {
+      scopeSql += ` AND diagnostic_order.workflow_status = 'FOLLOWUP_REPORT_SUBMITTED'`;
+    } else if (filter === "followup_due" || filter === "followup_overdue") {
+      const cmp = filter === "followup_overdue" ? "<" : "=";
+      scopeSql += ` AND diagnostic_order.workflow_status IN (
+          'SENT_TO_HEALTH_WORKER', 'PATIENT_FOLLOWUP', 'FOLLOWUP_REQUIRED', 'FOLLOWUP_RETURNED'
+        )
+        AND EXISTS (
+          SELECT 1 FROM tbl_diagnostic_advice advice
+           WHERE advice.order_id = diagnostic_order.id
+             AND COALESCE(advice.is_current, TRUE) IS TRUE
+             AND advice.status = 'SIGNED'
+             AND advice.follow_up_required IS TRUE
+             AND advice.follow_up_due_date IS NOT NULL
+             AND advice.follow_up_due_date::date ${cmp} CURRENT_DATE
+        )`;
+    } else if (filter === "followup_required") {
+      scopeSql += ` AND diagnostic_order.workflow_status IN ('FOLLOWUP_REQUIRED', 'ADVICE_SENT_TO_NAVIGATOR')`;
+    } else if (filter === "closed") {
+      scopeSql += ` AND diagnostic_order.workflow_status = 'CLOSED'`;
+    }
   }
 
   const count = await pool.query(
@@ -830,7 +1244,30 @@ async function listOrders(userId, roleName, query = {}) {
 
   const orders = [];
   for (const row of rows) {
-    orders.push({ ...row, items: await loadOrderItems(pool, row.id) });
+    const enriched = await enrichOrderWorkflowFields(pool, row);
+    const items = await loadOrderItems(pool, row.id);
+    let reportCount = 0;
+    let latestUploadAt = null;
+    try {
+      const reportMeta = await pool.query(
+        `SELECT COUNT(*)::int AS report_count, MAX(created_at) AS latest_upload_at
+           FROM tbl_diagnostic_order_reports
+          WHERE order_id = $1`,
+        [row.id]
+      );
+      reportCount = reportMeta.rows[0]?.report_count || 0;
+      latestUploadAt = reportMeta.rows[0]?.latest_upload_at || null;
+    } catch (error) {
+      if (error?.code !== "42P01") throw error;
+    }
+    orders.push({
+      ...enriched,
+      items,
+      report_count: reportCount,
+      latest_upload_at: latestUploadAt,
+      investigation_names: items.map((item) => item.test_name).filter(Boolean),
+      required_documents: buildRequiredDocuments(items),
+    });
   }
   return {
     orders,
@@ -905,6 +1342,10 @@ module.exports = {
   listFacilities,
   createOrder,
   getOrderForUser,
+  buildRequiredDocuments,
+  parseDocumentCategory,
+  attachDocumentCategory,
+  DOC_CATEGORY_PREFIX,
   listOrders,
   listEligiblePatients,
 };

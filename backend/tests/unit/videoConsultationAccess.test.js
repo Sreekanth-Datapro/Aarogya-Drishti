@@ -116,13 +116,16 @@ test("Health Worker list is scoped to registered_by patients", async () => {
 
 test("Navigator list is scoped to assigned_navigator_id", async () => {
   mockHandler = (sql) => {
+    if (sql.includes("BEGIN") || sql.includes("COMMIT") || sql.includes("ROLLBACK")) return { rows: [] };
+    if (sql.includes("FOR UPDATE OF consultation")) return { rows: [] };
     if (sql.includes("referral.assigned_navigator_id = $1")) {
       return { rows: [consultationRow()] };
     }
     return { rows: [] };
   };
   const result = await service.listNavigatorAppointments(NAV, { filter: "upcoming" });
-  expect(mockQueries[0].params).toEqual([NAV]);
+  const listQuery = mockQueries.find(({ sql }) => sql.includes("referral.assigned_navigator_id = $1"));
+  expect(listQuery.params).toEqual([NAV]);
   expect(result.appointments[0].navigator_id).toBe(NAV);
 });
 

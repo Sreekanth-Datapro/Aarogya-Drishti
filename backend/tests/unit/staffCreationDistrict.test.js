@@ -28,8 +28,21 @@ const userId = "11111111-1111-4111-8111-111111111111";
 
 beforeEach(() => {
   mockClientQuery.mockImplementation(async (sql) => {
+    if (["BEGIN", "COMMIT", "ROLLBACK"].includes(String(sql).trim())) return { rows: [] };
     if (sql.includes("SELECT id FROM mst_districts")) return { rows: [{ id: 101 }] };
-    if (sql.includes("SELECT id,mfa_required FROM mst_roles")) return { rows: [{ id: 3, mfa_required: false }] };
+    if (sql.includes("FROM mst_roles") && sql.includes("is_active")) {
+      return {
+        rows: [{
+          id: 3,
+          code: "MEDICAL_OFFICER",
+          name_en: "Medical Officer",
+          name_te: null,
+          description: null,
+          mfa_required: false,
+          is_system_role: true,
+        }],
+      };
+    }
     if (sql.includes("SELECT id,facility_type FROM mst_facilities")) return { rows: [{ id: 6, facility_type: "PHC" }] };
     if (sql.includes("SELECT id FROM mst_mandals")) return { rows: [{ id: 102 }] };
     if (sql.includes("INSERT INTO tbl_users")) {
@@ -70,8 +83,21 @@ test("District Admin staff creation uses the authenticated district when distric
 test("System Admin can create a Hospital Staff account at an active hospital", async () => {
   const systemAdmin = { id: actor.id, role_name: "SYSTEM_ADMIN" };
   mockClientQuery.mockImplementation(async (sql) => {
+    if (["BEGIN", "COMMIT", "ROLLBACK"].includes(String(sql).trim())) return { rows: [] };
     if (sql.includes("SELECT id FROM mst_districts")) return { rows: [{ id: 101 }] };
-    if (sql.includes("SELECT id,mfa_required FROM mst_roles")) return { rows: [{ id: 4, mfa_required: false }] };
+    if (sql.includes("FROM mst_roles") && sql.includes("is_active")) {
+      return {
+        rows: [{
+          id: 4,
+          code: "HOSPITAL_STAFF",
+          name_en: "Hospital Staff",
+          name_te: null,
+          description: null,
+          mfa_required: false,
+          is_system_role: true,
+        }],
+      };
+    }
     if (sql.includes("SELECT id,facility_type FROM mst_facilities")) return { rows: [{ id: 8, facility_type: "HOSPITAL" }] };
     if (sql.includes("INSERT INTO tbl_users")) {
       return { rows: [{
@@ -103,7 +129,7 @@ test("System Admin can create a Hospital Staff account at an active hospital", a
     [userId, 8]
   );
   expect(mockClientQuery).toHaveBeenCalledWith(
-    expect.stringContaining("SELECT id,mfa_required FROM mst_roles"),
+    expect.stringContaining("FROM mst_roles"),
     ["HOSPITAL_STAFF"]
   );
 });
@@ -112,8 +138,21 @@ test("Hospital Staff cannot be created at a non-hospital facility", async () => 
   mockClientQuery.mockClear();
   const systemAdmin = { id: actor.id, role_name: "SYSTEM_ADMIN" };
   mockClientQuery.mockImplementation(async (sql) => {
+    if (["BEGIN", "COMMIT", "ROLLBACK"].includes(String(sql).trim())) return { rows: [] };
     if (sql.includes("SELECT id FROM mst_districts")) return { rows: [{ id: 101 }] };
-    if (sql.includes("SELECT id,mfa_required FROM mst_roles")) return { rows: [{ id: 4, mfa_required: false }] };
+    if (sql.includes("FROM mst_roles") && sql.includes("is_active")) {
+      return {
+        rows: [{
+          id: 4,
+          code: "HOSPITAL_STAFF",
+          name_en: "Hospital Staff",
+          name_te: null,
+          description: null,
+          mfa_required: false,
+          is_system_role: true,
+        }],
+      };
+    }
     if (sql.includes("SELECT id,facility_type FROM mst_facilities")) return { rows: [{ id: 6, facility_type: "PHC" }] };
     return { rows: [] };
   });

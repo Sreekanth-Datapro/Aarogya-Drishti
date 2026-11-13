@@ -14,6 +14,7 @@ jest.mock("./drafts", () => ({
   removeDraft: jest.fn(),
   updateDraftStatus: jest.fn(),
   toRegistrationApiBody: jest.requireActual("./drafts").toRegistrationApiBody,
+  isSyncEligibleStatus: jest.requireActual("./drafts").isSyncEligibleStatus,
 }));
 
 jest.mock("./vault", () => ({
@@ -111,5 +112,18 @@ describe("syncQueue", () => {
       expect.any(String)
     );
     expect(api.post).toHaveBeenCalledTimes(1);
+  });
+
+  test("skips incomplete local_draft rows and does not call the API", async () => {
+    sessionStorage.setItem("accessToken", "tok");
+    drafts.listRegistrationDrafts.mockResolvedValue([
+      { idempotency_key: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", status: DRAFT_STATUS.LOCAL_DRAFT },
+    ]);
+
+    const result = await syncPendingRegistrations({ pin: "1234", userId: "9" });
+    expect(result.synced).toBe(0);
+    expect(result.failed).toBe(0);
+    expect(api.post).not.toHaveBeenCalled();
+    expect(drafts.loadDraftPayload).not.toHaveBeenCalled();
   });
 });

@@ -14,9 +14,18 @@ const {
   issuePublicMeetingAccess,
   kolkataDateKey,
   isVideoProviderConfigured,
+  MEETING_GRACE_MS,
 } = require("./videoMeetingService");
 
-const APPOINTMENT_FILTERS = new Set(["upcoming", "today", "completed", "cancelled"]);
+const APPOINTMENT_FILTERS = new Set([
+  "upcoming",
+  "today",
+  "completed",
+  "cancelled",
+  "missed",
+  "pending_attendance",
+  "rescheduled",
+]);
 
 const CONSULTATION_SELECT = `
   SELECT consultation.id AS video_consultation_id,
@@ -102,17 +111,33 @@ function matchesFilter(row, filter, now = new Date()) {
     slotStart: row.slot_start,
     slotEnd: row.slot_end,
     meetingExpiresAt: row.meeting_expires_at,
+    attendance: row.attendance,
     now,
   });
   if (filter === "cancelled") {
-    return lifecycle.lifecycle_status === "CANCELLED" || row.status_code === "CANCELLED" || row.is_active === false;
+    return lifecycle.lifecycle_status === "CANCELLED" || row.status_code === "CANCELLED";
   }
   if (filter === "completed") {
-    return lifecycle.lifecycle_status === "COMPLETED" || row.status_code === "COMPLETED";
+    return lifecycle.lifecycle_status === "COMPLETED"
+      || row.status_code === "COMPLETED"
+      || row.attendance === "ATTENDED";
+  }
+  if (filter === "missed") {
+    return lifecycle.lifecycle_status === "MISSED"
+      || row.status_code === "MISSED"
+      || row.attendance === "NO_SHOW";
+  }
+  if (filter === "rescheduled") {
+    return row.status_code === "RESCHEDULED";
+  }
+  if (filter === "pending_attendance") {
+    return ["CONFIRMED", "RESCHEDULED"].includes(row.status_code)
+      && row.is_active !== false
+      && row.attendance === "PENDING";
   }
   if (filter === "today") {
     return kolkataDateKey(row.slot_start) === kolkataDateKey(now)
-      && !["CANCELLED", "COMPLETED"].includes(lifecycle.lifecycle_status);
+      && !["CANCELLED", "COMPLETED", "MISSED", "RESCHEDULED"].includes(lifecycle.lifecycle_status);
   }
   // upcoming: confirmed/rescheduled and not yet expired/completed/cancelled
   return ["SCHEDULED", "IN_PROGRESS"].includes(lifecycle.lifecycle_status)
@@ -126,6 +151,7 @@ function serializeAppointment(row, language = "en", options = {}) {
     slotStart: row.slot_start,
     slotEnd: row.slot_end,
     meetingExpiresAt: row.meeting_expires_at,
+    attendance: row.attendance,
     now: options.now || new Date(),
   });
   const meetingReady = Boolean(row.provider && row.room_ref);
@@ -156,6 +182,8 @@ function serializeAppointment(row, language = "en", options = {}) {
     appointment_status: row.status_code,
     appointment_status_name: row.status_name,
     attendance: row.attendance,
+    started_at: row.started_at,
+    ended_at: row.ended_at,
     video_status: lifecycle.lifecycle_status,
     meeting_ready: meetingReady,
     meeting_provider: meetingReady ? row.provider : null,
@@ -199,6 +227,11 @@ async function listHealthWorkerAppointments(userId, query = {}) {
 
 async function listNavigatorAppointments(userId, query = {}) {
   const filter = requireFilter(query.filter);
+  try {
+    await finalizeExpiredVideoAttendance();
+  } catch (_error) {
+    // Listing must still succeed if the opportunistic scanner fails.
+  }
   const { rows } = await pool.query(
     `${CONSULTATION_SELECT}
       WHERE referral.assigned_navigator_id = $1
@@ -356,11 +389,14 @@ async function joinConsultation(userId, req, consultationId) {
       slotStart: row.slot_start,
       slotEnd: row.slot_end,
       meetingExpiresAt: row.meeting_expires_at,
+      attendance: row.attendance,
     });
     if (!lifecycle.can_join) {
       const messages = {
         CANCELLED: "This consultation was cancelled",
         COMPLETED: "This consultation is already completed",
+        MISSED: "This consultation was missed",
+        RESCHEDULED: "This consultation was replaced by a rescheduled appointment",
         EXPIRED: "This consultation meeting has expired",
         TOO_EARLY: "Join opens 10 minutes before the scheduled start (Asia/Kolkata)",
         NOT_CONFIRMED: "Only confirmed consultations can be joined",
@@ -422,8 +458,317 @@ async function joinConsultation(userId, req, consultationId) {
       public_room_warning: true,
       video_status: lifecycle.lifecycle_status,
       attendance: row.attendance,
+      patient_id: row.patient_id,
+      patient_code: row.patient_code,
+      patient_name: row.patient_name,
+      referral_id: row.referral_id,
+      referral_code: row.referral_code,
     };
   });
+}
+
+/**
+ * Clinical notes for a video consult come from the diagnostic module
+ * (report review notes + signed Specialist advice), not a separate empty stub.
+ */
+async function getClinicalContext(userId, consultationId) {
+  return withTransaction(pool, async (client) => {
+    await setActor(client, userId);
+    const { row } = await getAuthorizedConsultation(client, userId, consultationId);
+
+    const orders = await client.query(
+      `SELECT diagnostic_order.id,
+              diagnostic_order.order_code,
+              status.code AS status_code,
+              status.name_en AS status_name,
+              diagnostic_order.workflow_status,
+              diagnostic_order.created_at,
+              diagnostic_order.updated_at
+         FROM tbl_diagnostic_orders diagnostic_order
+         JOIN mst_investigation_statuses status ON status.id = diagnostic_order.status_id
+        WHERE diagnostic_order.patient_id = $1
+          AND (
+            diagnostic_order.referral_id = $2
+            OR diagnostic_order.referral_id IS NULL
+            OR diagnostic_order.prescribed_by = $3
+          )
+        ORDER BY diagnostic_order.updated_at DESC NULLS LAST
+        LIMIT 20`,
+      [row.patient_id, row.referral_id, row.specialist_id]
+    );
+
+    const orderIds = orders.rows.map((item) => item.id);
+    let reports = [];
+    let adviceRows = [];
+    if (orderIds.length) {
+      const reportResult = await client.query(
+        `SELECT report.id,
+                report.order_id,
+                report.original_filename,
+                report.review_status,
+                report.clinical_notes,
+                report.created_at,
+                uploader.full_name AS uploaded_by_name
+           FROM tbl_diagnostic_order_reports report
+           JOIN tbl_users uploader ON uploader.id = report.uploaded_by
+          WHERE report.order_id = ANY($1::uuid[])
+          ORDER BY report.created_at DESC`,
+        [orderIds]
+      );
+      reports = reportResult.rows;
+
+      await client.query("SAVEPOINT diagnostic_advice_context");
+      try {
+        const adviceResult = await client.query(
+          `SELECT advice.id,
+                  advice.order_id,
+                  advice.findings,
+                  advice.precautions,
+                  advice.treatment_advice,
+                  advice.medicine_name,
+                  advice.dosage,
+                  advice.duration_text,
+                  advice.follow_up_instructions,
+                  advice.additional_diagnostics_needed,
+                  advice.additional_diagnostics_notes,
+                  advice.status,
+                  advice.signed_at,
+                  specialist.full_name AS specialist_name
+             FROM tbl_diagnostic_advice advice
+             JOIN tbl_users specialist ON specialist.id = advice.specialist_id
+            WHERE advice.order_id = ANY($1::uuid[])
+            ORDER BY advice.updated_at DESC NULLS LAST`,
+          [orderIds]
+        );
+        adviceRows = adviceResult.rows;
+        await client.query("RELEASE SAVEPOINT diagnostic_advice_context");
+      } catch (error) {
+        await client.query("ROLLBACK TO SAVEPOINT diagnostic_advice_context").catch(() => {});
+        if (!(error && (error.code === "42P01" || /does not exist/i.test(error.message || "")))) {
+          throw error;
+        }
+      }
+    }
+
+    const DOC_PREFIX = /^\[DOC:([A-Z0-9_]+)\]\s*/i;
+    const ordersWithNotes = orders.rows.map((order) => {
+      const orderReports = reports
+        .filter((report) => report.order_id === order.id)
+        .map((report) => {
+          const match = String(report.clinical_notes || "").match(DOC_PREFIX);
+          const category = match ? match[1].toUpperCase() : null;
+          const notes = category
+            ? String(report.clinical_notes || "").replace(DOC_PREFIX, "").trim() || null
+            : report.clinical_notes;
+          return {
+            id: report.id,
+            original_filename: report.original_filename,
+            review_status: report.review_status,
+            document_category: category,
+            clinical_notes: notes,
+            uploaded_by_name: report.uploaded_by_name,
+            created_at: report.created_at,
+          };
+        });
+      const advice = adviceRows.find((rowAdvice) => rowAdvice.order_id === order.id) || null;
+      return {
+        ...order,
+        reports: orderReports,
+        advice,
+      };
+    });
+
+    return {
+      video_consultation_id: row.video_consultation_id,
+      patient_id: row.patient_id,
+      patient_code: row.patient_code,
+      patient_name: row.patient_name,
+      referral_id: row.referral_id,
+      referral_code: row.referral_code,
+      diagnostic_orders: ordersWithNotes,
+    };
+  });
+}
+
+async function recordMeetingPresence(userId, req, consultationId, input = {}) {
+  const event = String(input.event || "").toUpperCase();
+  if (!["JOINED", "LEFT"].includes(event)) {
+    throw new HttpError(400, "Meeting presence event must be JOINED or LEFT", "VALIDATION_ERROR");
+  }
+
+  return withTransaction(pool, async (client) => {
+    await setActor(client, userId);
+    const { row, actor } = await getAuthorizedConsultation(client, userId, consultationId, { forUpdate: true });
+    if (["ATTENDED", "NO_SHOW"].includes(row.attendance)) {
+      return {
+        video_consultation_id: row.video_consultation_id,
+        attendance: row.attendance,
+        started_at: row.started_at,
+        ended_at: row.ended_at,
+        unchanged: true,
+      };
+    }
+    if (!["CONFIRMED", "RESCHEDULED"].includes(row.status_code) || row.is_active === false) {
+      throw new HttpError(409, "Presence can only be recorded for an active confirmed consultation", "PRESENCE_NOT_ALLOWED");
+    }
+
+    let result;
+    if (event === "JOINED") {
+      const { rows } = await client.query(
+        `UPDATE tbl_video_consultations
+            SET started_at = COALESCE(started_at, now())
+          WHERE id = $1
+            AND is_active IS TRUE
+            AND attendance = 'PENDING'
+          RETURNING id, attendance::text AS attendance, started_at, ended_at`,
+        [row.video_consultation_id]
+      );
+      result = rows[0];
+    } else {
+      // LEFT records leave time only. Never invent started_at — that would let
+      // finalize mark ATTENDED without an actual JOINED presence event.
+      const { rows } = await client.query(
+        `UPDATE tbl_video_consultations
+            SET ended_at = now()
+          WHERE id = $1
+            AND is_active IS TRUE
+            AND attendance = 'PENDING'
+          RETURNING id, attendance::text AS attendance, started_at, ended_at`,
+        [row.video_consultation_id]
+      );
+      result = rows[0];
+    }
+    if (!result) {
+      throw new HttpError(409, "The consultation attendance changed before presence could be recorded", "PRESENCE_CONFLICT");
+    }
+
+    await audit(req, {
+      client,
+      required: true,
+      event: event === "JOINED" ? "VIDEO_MEETING_PARTICIPANT_JOINED" : "VIDEO_MEETING_PARTICIPANT_LEFT",
+      resourceType: "video_consultation",
+      resourceId: row.video_consultation_id,
+      patientId: row.patient_id,
+      metadata: {
+        role: actor.role_code,
+        attendance_unchanged: true,
+        started_at: result.started_at,
+        ended_at: result.ended_at,
+      },
+    });
+
+    return {
+      video_consultation_id: row.video_consultation_id,
+      attendance: result.attendance,
+      started_at: result.started_at,
+      ended_at: result.ended_at,
+      event,
+    };
+  });
+}
+
+async function finalizeExpiredVideoAttendance(now = new Date()) {
+  const client = await pool.connect();
+  const finalized = { attended: [], missed: [] };
+  try {
+    await client.query("BEGIN");
+    const { rows: candidates } = await client.query(
+      `SELECT consultation.id,
+              consultation.patient_id,
+              consultation.status_id,
+              consultation.attendance::text AS attendance,
+              consultation.started_at,
+              consultation.ended_at,
+              consultation.meeting_expires_at,
+              consultation.is_active,
+              consultation.specialist_id,
+              consultation.requested_by,
+              status.code AS status_code,
+              slot.slot_end
+         FROM tbl_video_consultations consultation
+         JOIN mst_appointment_statuses status ON status.id = consultation.status_id
+         JOIN tbl_consultation_slots slot ON slot.id = consultation.slot_id
+        WHERE consultation.is_active IS TRUE
+          AND consultation.attendance = 'PENDING'
+          AND status.code IN ('CONFIRMED', 'RESCHEDULED')
+          AND COALESCE(
+                consultation.meeting_expires_at,
+                slot.slot_end + ($1::text)::interval
+              ) <= $2::timestamptz
+        FOR UPDATE OF consultation`,
+      [`${Math.round(MEETING_GRACE_MS / 1000)} seconds`, now]
+    );
+
+    if (!candidates.length) {
+      await client.query("COMMIT");
+      return finalized;
+    }
+
+    const { rows: statusRows } = await client.query(
+      `SELECT code, id FROM mst_appointment_statuses WHERE code = ANY($1::text[])`,
+      [["COMPLETED", "MISSED"]]
+    );
+    const statusIdByCode = Object.fromEntries(statusRows.map((row) => [row.code, row.id]));
+    if (!statusIdByCode.COMPLETED || !statusIdByCode.MISSED) {
+      throw new HttpError(500, "Appointment statuses are not configured", "CONFIGURATION_ERROR");
+    }
+
+    for (const consultation of candidates) {
+      const participated = consultation.started_at != null;
+      const nextStatus = participated ? "COMPLETED" : "MISSED";
+      const nextAttendance = participated ? "ATTENDED" : "NO_SHOW";
+      const nextStatusId = statusIdByCode[nextStatus];
+      const { rows } = await client.query(
+        `UPDATE tbl_video_consultations
+            SET status_id = $2,
+                attendance = $3::attendance_status,
+                ended_at = CASE
+                  WHEN $3::text = 'ATTENDED' THEN COALESCE(ended_at, $4::timestamptz)
+                  ELSE ended_at
+                END,
+                is_active = CASE WHEN $3::text = 'NO_SHOW' THEN FALSE ELSE is_active END
+          WHERE id = $1
+            AND attendance = 'PENDING'
+            AND is_active IS TRUE
+          RETURNING id`,
+        [consultation.id, nextStatusId, nextAttendance, now]
+      );
+      if (!rows.length) continue;
+
+      const changedBy = consultation.specialist_id || consultation.requested_by;
+      if (!changedBy) {
+        // Skip history when no actor is available; attendance update already committed above.
+        if (participated) finalized.attended.push(consultation.id);
+        else finalized.missed.push(consultation.id);
+        continue;
+      }
+      await client.query(
+        `INSERT INTO tbl_appointment_status_history
+           (video_consultation_id, from_status_id, to_status_id, changed_by, reason)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [
+          consultation.id,
+          consultation.status_id,
+          nextStatusId,
+          changedBy,
+          participated
+            ? "Automatic attendance: meeting participation recorded before meeting end"
+            : "Automatic attendance: no participation recorded by meeting end",
+        ]
+      );
+
+      if (participated) finalized.attended.push(consultation.id);
+      else finalized.missed.push(consultation.id);
+    }
+
+    await client.query("COMMIT");
+    return finalized;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 module.exports = {
@@ -431,6 +776,9 @@ module.exports = {
   listNavigatorAppointments,
   provisionMeeting,
   joinConsultation,
+  getClinicalContext,
+  recordMeetingPresence,
+  finalizeExpiredVideoAttendance,
   serializeAppointment,
   matchesFilter,
 };

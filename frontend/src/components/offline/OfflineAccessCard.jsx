@@ -88,8 +88,15 @@ export default function OfflineAccessCard() {
   const handleDisable = async () => {
     setError("");
     setMessage("");
-    if (pendingDraftCount > 0) {
-      const ok = window.confirm(t("offline.disableWarnDrafts", { count: pendingDraftCount }));
+    let unsynced = pendingDraftCount;
+    try {
+      const { countUnsyncedDrafts } = await import("../../offline/drafts");
+      unsynced = await countUnsyncedDrafts(user.id);
+    } catch {
+      // fall back to pending sync count
+    }
+    if (unsynced > 0) {
+      const ok = window.confirm(t("offline.disableWarnDrafts", { count: unsynced }));
       if (!ok) return;
     } else {
       const ok = window.confirm(t("offline.disableConfirm"));

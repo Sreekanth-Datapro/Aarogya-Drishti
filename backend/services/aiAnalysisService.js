@@ -207,6 +207,24 @@ function validateAnalysis(payload, screeningId, modelInformation) {
         || !Object.hasOwn(RESULT_LABELS, result.classification)
         || !(result.model_confidence === null
           || (Number.isInteger(result.model_confidence) && result.model_confidence >= 0 && result.model_confidence <= 100))
+        || (result.raw_model_confidence != null
+          && !(Number.isInteger(result.raw_model_confidence)
+            && result.raw_model_confidence >= 0
+            && result.raw_model_confidence <= 100))
+        || (result.image_quality_score != null && (
+          typeof result.image_quality_score !== "object"
+          || !["SCORED", "INSUFFICIENT"].includes(result.image_quality_score.status)
+          || !(result.image_quality_score.score === null
+            || (Number.isInteger(result.image_quality_score.score)
+              && result.image_quality_score.score >= 0
+              && result.image_quality_score.score <= 100))
+        ))
+        || (result.overall_clinical_score != null)
+        || !(result.visual_health_assessment_score === null
+          || result.visual_health_assessment_score === undefined
+          || (Number.isInteger(result.visual_health_assessment_score)
+            && result.visual_health_assessment_score >= 0
+            && result.visual_health_assessment_score <= 100))
         || !Array.isArray(result.observations)
         || !result.observations.every((item) => typeof item === "string")
         || !Array.isArray(result.abnormalities)
@@ -310,9 +328,23 @@ async function saveAnalysis(userId, req, screening, files, analysis, modelInform
         ...result,
         disclaimer: analysis.disclaimer || ANALYSIS_DISCLAIMER,
       };
-      const score = result.model_confidence === null
-        ? null
-        : Number((result.model_confidence / 100).toFixed(4));
+      // Persist AI Visual Health Assessment Score only (from model findings).
+      // Never store observation confidence or image-quality as the health score.
+      const qualityInsufficient =
+        result.image_quality?.status === "RECAPTURE"
+        || result.image_quality_score?.status === "INSUFFICIENT"
+        || result.model_status === "NOT_ASSESSABLE"
+        || result.model_status === "INVALID_OUTPUT";
+      const visualScore = result.visual_health_assessment_score;
+      let score = null;
+      if (
+        !qualityInsufficient
+        && Number.isInteger(visualScore)
+        && visualScore >= 0
+        && visualScore <= 100
+      ) {
+        score = Number((visualScore / 100).toFixed(4));
+      }
       const { rows } = await client.query(
         `INSERT INTO tbl_ai_assessments
            (screening_id, photo_id, ai_model_id, attempt_no, status, result_label,

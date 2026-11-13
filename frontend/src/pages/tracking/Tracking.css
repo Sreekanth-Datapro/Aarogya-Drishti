@@ -215,13 +215,19 @@
   margin-top: 0.85rem;
 }
 
+.tracking-journey-layout {
+  display: grid;
+  gap: 1.25rem;
+}
+
 .tracking-panel-wide {
   grid-column: 1 / -1;
 }
 
-.tracking-panels {
+.tracking-panels,
+.tracking-side-panels {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
 }
 
@@ -229,13 +235,52 @@
   background: #fff;
   border: 1px solid #d5e4db;
   border-radius: 0.75rem;
-  padding: 1rem;
+  padding: 1rem 1.1rem;
+  min-width: 0;
 }
 
-.tracking-panel h2 {
+.tracking-timeline-panel {
+  padding: 1.15rem 1.25rem;
+}
+
+.tracking-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.tracking-panel > h2 {
   margin: 0 0 0.75rem;
-  font-size: 1rem;
+  font-size: 1.05rem;
   color: #1f3d32;
+}
+
+.tracking-panel-head h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  color: #1f3d32;
+}
+
+.tracking-panel-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.75rem;
+  height: 1.75rem;
+  padding: 0 0.45rem;
+  border-radius: 999px;
+  background: #e8f3ec;
+  color: #1f5c45;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.tracking-empty {
+  margin: 0;
+  color: #60786c;
+  font-size: 0.92rem;
 }
 
 .tracking-panel ul,
@@ -266,8 +311,173 @@
   font-style: normal;
 }
 
+/* Vertical journey timeline — replaces the cramped 9-column table */
+.journey-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0;
+}
+
+.journey-timeline-item {
+  display: grid;
+  grid-template-columns: 1.25rem minmax(0, 1fr);
+  gap: 0.85rem;
+  align-items: stretch;
+}
+
+.journey-timeline-rail {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+.journey-timeline-rail::before {
+  content: "";
+  position: absolute;
+  top: 0.35rem;
+  bottom: -0.35rem;
+  width: 2px;
+  background: #cfe0d6;
+}
+
+.journey-timeline-item:last-child .journey-timeline-rail::before {
+  bottom: 1.25rem;
+}
+
+.journey-timeline-dot {
+  position: relative;
+  z-index: 1;
+  width: 0.7rem;
+  height: 0.7rem;
+  margin-top: 0.35rem;
+  border-radius: 50%;
+  background: #1f5c45;
+  box-shadow: 0 0 0 3px #e8f3ec;
+  flex-shrink: 0;
+}
+
+.journey-timeline-card {
+  min-width: 0;
+  margin-bottom: 0.9rem;
+  padding: 0.95rem 1rem;
+  border: 1px solid #d5e4db;
+  border-radius: 0.75rem;
+  background: linear-gradient(180deg, #fbfdfc 0%, #ffffff 55%);
+}
+
+.journey-timeline-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  margin-bottom: 0.85rem;
+}
+
+.journey-timeline-card-head time {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #2f4a3e;
+}
+
+.journey-status-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 0.65rem;
+  align-items: center;
+  margin-bottom: 0.85rem;
+  padding: 0.7rem 0.8rem;
+  border-radius: 0.6rem;
+  background: #f3f8f5;
+  border: 1px solid #e2ece6;
+}
+
+.journey-status-row > div {
+  min-width: 0;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.journey-status-row strong {
+  color: #1f3d32;
+  font-size: 0.92rem;
+  word-break: break-word;
+}
+
+.journey-status-arrow {
+  color: #6b8577;
+  font-weight: 700;
+}
+
+.journey-field-label {
+  display: block;
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #60786c;
+  margin-bottom: 0.15rem;
+}
+
+.journey-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem 1rem;
+  margin: 0;
+}
+
+.journey-meta-grid > div {
+  min-width: 0;
+  margin: 0;
+}
+
+.journey-meta-grid dt {
+  margin: 0 0 0.15rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #60786c;
+}
+
+.journey-meta-grid dd {
+  margin: 0;
+  color: #1f3d32;
+  font-size: 0.9rem;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.journey-notes {
+  margin: 0.85rem 0 0;
+  padding-top: 0.75rem;
+  border-top: 1px solid #e6eee9;
+  color: #2f4a3e;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+@media (max-width: 900px) {
+  .tracking-side-panels {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 720px) {
   .tracking-page .page-header {
     flex-direction: column;
+  }
+
+  .journey-status-row {
+    grid-template-columns: 1fr;
+  }
+
+  .journey-status-arrow {
+    display: none;
+  }
+
+  .journey-meta-grid {
+    grid-template-columns: 1fr;
   }
 }

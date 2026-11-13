@@ -7,7 +7,7 @@ import { useLanguage } from "../../i18n/LanguageContext";
 import { Alert, Button } from "../../components/ui";
 import "./MyAppointments.css";
 
-const FILTERS = ["upcoming", "today", "completed", "cancelled"];
+const FILTERS = ["upcoming", "today", "pending_attendance", "completed", "missed", "rescheduled", "cancelled"];
 
 function badgeClass(status) {
   return `my-appointment-badge ${(status || "unavailable").toLowerCase()}`;
@@ -177,30 +177,39 @@ export default function MyAppointments({ role }) {
                 <Button type="button" variant="secondary" onClick={() => copyMeetingHint(appointment)}>
                   <Copy size={16} aria-hidden="true" /> {t("myAppointments.copyLink")}
                 </Button>
-                <Button
-                  type="button"
-                  disabled={!canJoin || !appointment.can_join || joiningId === appointment.video_consultation_id}
-                  loading={joiningId === appointment.video_consultation_id}
-                  onClick={() => joinConsultation(appointment)}
-                  title={
-                    !canJoin
-                      ? t("myAppointments.joinPermissionMissing")
-                      : appointment.can_join
-                        ? undefined
-                        : joinBlockedMessage(t, appointment.join_blocked_reason)
-                  }
-                >
-                  <Video size={16} aria-hidden="true" />
-                  {joiningId === appointment.video_consultation_id
-                    ? t("myAppointments.joining")
-                    : t("myAppointments.join")}
-                  <ExternalLink size={14} aria-hidden="true" />
-                </Button>
+                {canJoin && appointment.can_join && (
+                  <Button
+                    type="button"
+                    disabled={joiningId === appointment.video_consultation_id}
+                    loading={joiningId === appointment.video_consultation_id}
+                    onClick={() => joinConsultation(appointment)}
+                  >
+                    <Video size={16} aria-hidden="true" />
+                    {joiningId === appointment.video_consultation_id
+                      ? t("myAppointments.joining")
+                      : t("myAppointments.join")}
+                    <ExternalLink size={14} aria-hidden="true" />
+                  </Button>
+                )}
               </div>
-              {!appointment.can_join && canJoin && (
+              {canJoin && !appointment.can_join && (
                 <p className="care-muted" role="status">
                   {joinBlockedMessage(t, appointment.join_blocked_reason)}
                 </p>
+              )}
+              {appointment.appointment_status === "MISSED" && role === "NAVIGATOR" && (
+                <div className="my-appointment-actions">
+                  <p className="care-muted" role="status">{t("myAppointments.missedRescheduleHint")}</p>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => navigate(`/navigator/referrals`, {
+                      state: { openReferralId: appointment.referral_id },
+                    })}
+                  >
+                    {t("navigator.rescheduleAppointment")}
+                  </Button>
+                </div>
               )}
             </article>
           );

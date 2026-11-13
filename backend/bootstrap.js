@@ -3,40 +3,73 @@ require("dotenv").config({ quiet: true });
 const pool = require("./db");
 const bcrypt = require("bcryptjs");
 const config = require("./config/config");
-const { runMigrations } = require("./utils/migrator");
+const {
+  getStatus,
+  summarizeMigrationStatusForBootstrap,
+  resolveKnownBootstrapPromotionChecksum,
+  BOOTSTRAP_PROMOTION_MIGRATION,
+} = require("./utils/migrator");
 
-async function assertMigrationsApplied() {
+async function assertMigrationsReadyForBootstrap() {
   const client = await pool.connect();
-  let outstanding;
 
   try {
-    const results = await runMigrations(client, {
-      apply: false,
-      context: { bootstrapUsername: config.systemAdmin.username },
-    });
-    outstanding = results.filter((migration) => migration.action === "would-apply");
+    let summary = summarizeMigrationStatusForBootstrap(await getStatus(client));
+
+    // Known reviewed 003 file revision: verify SUPER_ADMIN + audit, then rewrite
+    // the recorded checksum so startup is not permanently blocked.
+    if (
+      !summary.bootstrapAllowed &&
+      summary.criticalModified.length === 1 &&
+      summary.criticalModified[0].file === BOOTSTRAP_PROMOTION_MIGRATION
+    ) {
+      await resolveKnownBootstrapPromotionChecksum(client, {
+        bootstrapUsername: config.systemAdmin.username,
+      });
+      summary = summarizeMigrationStatusForBootstrap(await getStatus(client));
+    }
+
+    if (!summary.bootstrapAllowed) {
+      if (summary.criticalModified.length > 0) {
+        throw new Error(
+          `Database has modified migration checksum(s): ` +
+            `${summary.criticalModified.map((migration) => migration.file).join(", ")}. ` +
+            "Resolve checksum issues before bootstrap."
+        );
+      }
+      if (summary.blocking.length > 0) {
+        throw new Error(
+          `Database is missing ${summary.blocking.length} migration(s) before 003: ` +
+            `${summary.blocking.map((migration) => migration.file).join(", ")}. ` +
+            "Apply phase 1 with --defer-003 (001–002 only) first."
+        );
+      }
+      throw new Error(
+        "Bootstrap requires 001–002 applied and 003 as the next pending migration " +
+          "(or 003 already applied). Use --defer-003, then create SYSTEM_ADMIN, " +
+          "then dual-approve 003 before running 004+."
+      );
+    }
+
+    return {
+      only003Pending: summary.nextIs003,
+      bootstrapRoleCode: summary.bootstrapRoleCode,
+    };
   } finally {
     client.release();
-  }
-
-  if (outstanding.length > 0) {
-    throw new Error(
-      `Database is missing ${outstanding.length} migration(s): ` +
-      `${outstanding.map((migration) => migration.file).join(", ")}. ` +
-      "Review with `npm run migrate` and apply only after approval with `npm run migrate:apply`."
-    );
   }
 }
 
 // Ensures one bootstrap administrator exists. An existing account is never
 // modified (credentials, role and id are left as they are).
 async function bootstrap() {
-  await assertMigrationsApplied();
+  const { only003Pending, bootstrapRoleCode } =
+    await assertMigrationsReadyForBootstrap();
 
   if (!config.getMfaEncryptionKey()) {
     console.warn(
       "WARNING: MFA_ENCRYPTION_KEY is not set (expected 32 bytes, base64). " +
-      "Users in MFA-required roles cannot sign in until it is configured."
+        "Users in MFA-required roles cannot sign in until it is configured."
     );
   }
 
@@ -59,7 +92,9 @@ async function bootstrap() {
     );
 
     if (existing.rows.length) {
-      console.log(`Bootstrap account "${username}" exists (role ${existing.rows[0].role_code}); left unchanged.`);
+      console.log(
+        `Bootstrap account "${username}" exists (role ${existing.rows[0].role_code}); left unchanged.`
+      );
       await client.query("COMMIT");
       return;
     }
@@ -79,14 +114,34 @@ async function bootstrap() {
       throw new Error("SYSTEM_ADMIN_PASSWORD is required to create the bootstrap account.");
     }
 
+    const role = await client.query(
+      `SELECT id FROM mst_roles WHERE code = $1`,
+      [bootstrapRoleCode]
+    );
+    if (!role.rows.length) {
+      throw new Error(
+        `Required role ${bootstrapRoleCode} is missing; apply migrations before bootstrap.`
+      );
+    }
+
     await client.query(
       `INSERT INTO tbl_users (username, password_hash, full_name, role_id, status, is_synthetic)
-       SELECT $1, $2, $3, id, 'ACTIVE', FALSE FROM mst_roles WHERE code = 'SUPER_ADMIN'`,
-      [username, await bcrypt.hash(config.systemAdmin.password, 12), config.systemAdmin.fullName]
+       VALUES ($1, $2, $3, $4, 'ACTIVE', FALSE)`,
+      [
+        username,
+        await bcrypt.hash(config.systemAdmin.password, 12),
+        config.systemAdmin.fullName,
+        role.rows[0].id,
+      ]
     );
 
     await client.query("COMMIT");
-    console.log(`Bootstrap SUPER_ADMIN account "${username}" created.`);
+    console.log(
+      `Bootstrap ${bootstrapRoleCode} account "${username}" created` +
+        (only003Pending
+          ? " (003 still pending; run approved promote next)."
+          : ".")
+    );
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;

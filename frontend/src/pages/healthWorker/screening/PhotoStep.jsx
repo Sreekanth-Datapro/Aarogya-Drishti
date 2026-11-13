@@ -233,6 +233,7 @@ export default function PhotoStep({ screening, maxBytes, photoConsent, onChanged
 
   const stageFile = async (view, file) => {
     setError("");
+    setAnalysisResult(null);
     if (!file) return;
     const invalid = validateImageFile(file, limit);
     if (invalid === "type") {
@@ -483,6 +484,7 @@ export default function PhotoStep({ screening, maxBytes, photoConsent, onChanged
   const savePhotos = async (views) => {
     setError("");
     setPreviewError("");
+    setAnalysisResult(null);
     const uploaded = [];
     for (const view of views) {
       setUploading(view);
@@ -544,6 +546,7 @@ export default function PhotoStep({ screening, maxBytes, photoConsent, onChanged
   };
 
   const removePhoto = async (view) => {
+    setAnalysisResult(null);
     if (selected[view]) {
       clearSelected(view);
       return;
@@ -773,7 +776,7 @@ export default function PhotoStep({ screening, maxBytes, photoConsent, onChanged
           {missing.length > 0 && <Alert type="info">{t("screening.photosStillNeeded", { count: formatLocalizedNumber(missing.length, language) })}</Alert>}
           <div className="scr-unsaved">
             <Button type="button" onClick={analyzeScreening} loading={analyzing}
-              disabled={!canAnalyze || anyBusy}>
+              disabled={!canAnalyze || anyBusy || analyzing}>
               <Sparkles size={16} /> {t("screening.analyzeImages")}
             </Button>
             <p className="scr-quality-disclaimer">{t("screening.aiAnalysisDisclaimer")}</p>
@@ -782,53 +785,131 @@ export default function PhotoStep({ screening, maxBytes, photoConsent, onChanged
             <section className="scr-ai-results" aria-label={t("screening.aiAnalysisResults")}>
               <h3>{t("screening.aiAnalysisResults")}</h3>
               <p className="scr-quality-disclaimer">{t("screening.aiAnalysisWarning")}</p>
-              {analysisResult.views.map((result) => (
-                <article key={result.view}>
-                  <strong>
-                    {getCodeLabel("photoViews", result.view, language)} · {t(`screening.aiClassifications.${result.classification}`)}
-                  </strong>
-                  {result.selected_category && (
-                    <p>{t("screening.selectedCategory", { category: t(`screening.imageCategories.${result.selected_category}`) })}</p>
-                  )}
-                  {result.model_status && (
-                    <p>
-                      {t("screening.aiModelStatus")}:{" "}
-                      {(() => {
-                        const key = `screening.aiModelStatuses.${result.model_status}`;
-                        const label = t(key);
-                        return label === key ? result.model_status : label;
-                      })()}
+              {analysisResult.views.map((result) => {
+                const qualityReport = result.image_quality_score || result.image_quality?.score_report;
+                const insufficient = qualityReport?.status === "INSUFFICIENT"
+                  || result.image_quality?.status === "RECAPTURE"
+                  || result.model_status === "NOT_ASSESSABLE"
+                  || result.model_status === "INVALID_OUTPUT";
+                const confidence = result.observation_confidence ?? result.model_confidence;
+                const visualScore = result.visual_health_assessment_score;
+                const visualScoreMessage = result.visual_health_assessment_score_message
+                  || t("screening.visualHealthScoreUnavailable");
+                const scoreReasons = Array.isArray(result.visual_health_assessment_score_reasons)
+                  ? result.visual_health_assessment_score_reasons
+                  : [];
+                const unassessable = Array.isArray(result.visual_health_assessment_unassessable)
+                  ? result.visual_health_assessment_unassessable
+                  : [];
+                return (
+                  <article key={result.view} className={insufficient ? "scr-ai-result-insufficient" : "scr-ai-result-ok"}>
+                    <strong>
+                      {getCodeLabel("photoViews", result.view, language)} · {t(`screening.aiClassifications.${result.classification}`)}
+                    </strong>
+                    {result.selected_category && (
+                      <p>{t("screening.selectedCategory", { category: t(`screening.imageCategories.${result.selected_category}`) })}</p>
+                    )}
+                    {result.model_status && (
+                      <p>
+                        {t("screening.aiModelStatus")}:{" "}
+                        {(() => {
+                          const key = `screening.aiModelStatuses.${result.model_status}`;
+                          const label = t(key);
+                          return label === key ? result.model_status : label;
+                        })()}
+                      </p>
+                    )}
+
+                    <p className="scr-ai-score-line">
+                      <strong>{t("screening.visualHealthAssessmentScore")}:</strong>{" "}
+                      {visualScore == null
+                        ? t("screening.scoreNotAvailable")
+                        : `${formatLocalizedNumber(visualScore, language)}/100`}
                     </p>
-                  )}
-                  <p>{t("screening.aiImageQuality")}: {getCodeLabel("qualityStatuses", result.image_quality.status, language)}</p>
-                  {(result.observation_confidence ?? result.model_confidence) != null && (
-                    <p>{t("screening.aiModelConfidence", { value: formatLocalizedNumber(result.observation_confidence ?? result.model_confidence, language) })}</p>
-                  )}
-                  {Array.isArray(result.possible_visual_findings) && result.possible_visual_findings.length > 0 && (
-                    <ul className="scr-ai-findings">
-                      {result.possible_visual_findings.map((finding) => {
-                        const featureKey = `screening.aiFeatures.${finding.feature}`;
-                        const scaleKey = `screening.aiScales.${finding.scale}`;
-                        const featureLabel = t(featureKey) === featureKey ? finding.feature : t(featureKey);
-                        const scaleLabel = t(scaleKey) === scaleKey ? finding.scale : t(scaleKey);
-                        return (
-                          <li key={`${result.view}-${finding.feature}`}>
-                            {featureLabel}: {scaleLabel}
-                            {finding.note ? ` — ${finding.note}` : ""}
+                    <p className="scr-quality-disclaimer">{visualScoreMessage}</p>
+                    {scoreReasons.length > 0 && (
+                      <ul className="scr-ai-findings">
+                        {scoreReasons.map((item) => (
+                          <li key={`${result.view}-score-${item.feature}`}>
+                            {item.reason || `${item.description || item.feature}: ${item.points}/100`}
                           </li>
-                        );
-                      })}
-                    </ul>
-                  )}
-                  {result.not_assessable_reason && <p>{result.not_assessable_reason}</p>}
-                  {(!result.possible_visual_findings || result.possible_visual_findings.length === 0)
-                    && result.observations.map((observation, index) => <p key={`observation-${index}`}>{observation}</p>)}
-                  {result.uncertainty_warnings.map((warning) => (
-                    <p className="scr-quality-disclaimer" key={warning}>{t(`screening.aiWarnings.${warning}`)}</p>
-                  ))}
-                  <p>{t("screening.aiReviewRecommendation")}</p>
-                </article>
-              ))}
+                        ))}
+                      </ul>
+                    )}
+                    {unassessable.length > 0 && (
+                      <ul className="scr-ai-findings">
+                        {unassessable.map((item) => (
+                          <li key={`${result.view}-na-${item.feature}`}>
+                            {t("screening.unassessableFinding")}: {item.description || item.feature}
+                            {item.appearance ? ` — ${item.appearance}` : ""}
+                            {item.note ? ` — ${item.note}` : ""}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+
+                    <p>{t("screening.aiImageQuality")}: {getCodeLabel("qualityStatuses", result.image_quality.status, language)}</p>
+                    {qualityReport?.status === "INSUFFICIENT" ? (
+                      <p className="scr-ai-score-line">
+                        <strong>{t("screening.imageQualityScore")}:</strong> {qualityReport.label || t("screening.insufficientImageQuality")}
+                        {qualityReport.raw_score != null && (
+                          <> ({t("screening.technicalRawScore")}: {formatLocalizedNumber(qualityReport.raw_score, language)}/100)</>
+                        )}
+                      </p>
+                    ) : qualityReport?.score != null ? (
+                      <p className="scr-ai-score-line">
+                        <strong>{t("screening.imageQualityScore")}:</strong>{" "}
+                        {formatLocalizedNumber(qualityReport.score, language)}/100
+                      </p>
+                    ) : null}
+
+                    {insufficient ? (
+                      <p className="scr-quality-disclaimer">
+                        {result.not_assessable_reason || t("screening.insufficientImageQuality")}
+                      </p>
+                    ) : confidence != null ? (
+                      <p>{t("screening.aiModelConfidence", { value: formatLocalizedNumber(confidence, language) })}</p>
+                    ) : (
+                      <p className="scr-quality-disclaimer">{t("screening.analysisUnavailable")}</p>
+                    )}
+
+                    <h4 className="scr-ai-findings-heading">{t("screening.visualObservations")}</h4>
+                    {Array.isArray(result.possible_visual_findings) && result.possible_visual_findings.length > 0 ? (
+                      <ul className="scr-ai-findings">
+                        {result.possible_visual_findings.map((finding) => {
+                          const featureKey = `screening.aiFeatures.${finding.feature}`;
+                          const scaleKey = `screening.aiScales.${finding.scale}`;
+                          const featureLabel = t(featureKey) === featureKey ? finding.feature : t(featureKey);
+                          const scaleLabel = t(scaleKey) === scaleKey ? finding.scale : t(scaleKey);
+                          return (
+                            <li key={`${result.view}-${finding.feature}`}>
+                              <strong>{featureLabel}</strong>: {scaleLabel}
+                              {finding.note ? ` — ${finding.note}` : ""}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    ) : (
+                      (result.observations || []).map((observation, index) => (
+                        <p key={`observation-${index}`}>{observation}</p>
+                      ))
+                    )}
+
+                    {result.not_assessable_reason && !insufficient && <p>{result.not_assessable_reason}</p>}
+                    {(result.uncertainty_warnings || []).map((warning) => {
+                      const key = `screening.aiWarnings.${warning}`;
+                      const label = t(key);
+                      return (
+                        <p className="scr-quality-disclaimer" key={warning}>
+                          {label === key ? warning : label}
+                        </p>
+                      );
+                    })}
+                    <p className="scr-quality-disclaimer">{t("screening.visualHealthScoreSafety")}</p>
+                    <p>{t("screening.aiReviewRecommendation")}</p>
+                  </article>
+                );
+              })}
             </section>
           )}
         </>

@@ -39,16 +39,23 @@ const PAGE_TITLE_KEYS = {
 
 const STATUS_TONES = { ACTIVE: "success", PENDING_SETUP: "warning", SUSPENDED: "danger", DISABLED: "neutral" };
 
-export default function StaffManagement() {
+export default function StaffManagement({ customOnly = false }) {
   const { user } = useAuth();
   const { t, language } = useLanguage();
   const canChooseDistrict = ["SYSTEM_ADMIN", "SUPER_ADMIN"].includes(user?.role);
   // /district/staff/:staffPage shows one role only (e.g. medical-officers)
   const { staffPage } = useParams();
-  const pageRole = DISTRICT_STAFF_PAGES[staffPage] || "";
+  const pageRole = customOnly ? "" : (DISTRICT_STAFF_PAGES[staffPage] || "");
 
   const [staff, setStaff] = useState([]);
-  const [options, setOptions] = useState({ districts: [], facilities: [], specialties: [], mandals: [] });
+  const [options, setOptions] = useState({
+    districts: [],
+    facilities: [],
+    specialties: [],
+    mandals: [],
+    custom_roles: [],
+    clinical_roles: STAFF_ROLE_CODES,
+  });
   const [form, setForm] = useState({ ...EMPTY_FORM, role_code: pageRole });
   const [filters, setFilters] = useState({ search: "", role_code: pageRole, district_id: "" });
   const [selected, setSelected] = useState(null);
@@ -67,24 +74,34 @@ export default function StaffManagement() {
     setLoading(true);
     setError("");
     try {
+      const requestFilters = { ...filters };
+      if (customOnly && !requestFilters.role_code) {
+        // List custom-role accounts by requesting each known custom role after options load;
+        // when no role filter is set the API returns clinical + custom accounts.
+      }
       const [staffResponse, optionsResponse] = await Promise.all([
-        api.get("/admin/staff", { params: filters }),
+        api.get("/admin/staff", { params: requestFilters }),
         api.get("/admin/staff/options"),
       ]);
-      setStaff(staffResponse.data.staff || []);
-      setOptions({
+      const nextOptions = {
         districts: [],
         facilities: [],
         specialties: [],
         mandals: [],
+        custom_roles: [],
+        clinical_roles: STAFF_ROLE_CODES,
         ...(optionsResponse.data.options || {}),
-      });
+      };
+      setOptions(nextOptions);
+      const customCodes = new Set((nextOptions.custom_roles || []).map((role) => role.code));
+      const listed = staffResponse.data.staff || [];
+      setStaff(customOnly ? listed.filter((item) => customCodes.has(item.role_code)) : listed);
     } catch (requestError) {
       setError(apiMessage(requestError, "staff.loadFailed"));
     } finally {
       setLoading(false);
     }
-  }, [filters]);
+  }, [filters, customOnly]);
 
   useEffect(() => {
     loadData();
@@ -95,10 +112,26 @@ export default function StaffManagement() {
 
   const updateForm = (field, value) => setForm((current) => ({ ...current, [field]: value }));
 
-  const openCreate = () => {
+  const openCreate = async () => {
     setForm({ ...EMPTY_FORM, role_code: pageRole });
     setError("");
     setCreateOpen(true);
+    // Refresh options when opening create so custom roles appear even if first load was empty/stale.
+    try {
+      const optionsResponse = await api.get("/admin/staff/options");
+      setOptions((current) => ({
+        ...current,
+        districts: [],
+        facilities: [],
+        specialties: [],
+        mandals: [],
+        custom_roles: [],
+        clinical_roles: STAFF_ROLE_CODES,
+        ...(optionsResponse.data.options || {}),
+      }));
+    } catch (_requestError) {
+      // Keep any previously loaded options; create submit still validates on the server.
+    }
   };
 
   const createStaff = async (event) => {
@@ -219,6 +252,9 @@ export default function StaffManagement() {
     .map((facility) => (
       <option key={facility.id} value={facility.id}>{getLocalizedMasterName(facility, language)}</option>
     ));
+  const customRoles = options.custom_roles || [];
+  const selectedCustomRole = customRoles.find((role) => role.code === form.role_code) || null;
+  const isCustomRoleSelected = Boolean(selectedCustomRole);
   const medicalOfficerForm = form.role_code === "MEDICAL_OFFICER";
   const formDistrictId = canChooseDistrict ? form.district_id : ownDistrict?.id;
   // A Medical Officer's facility must be in the chosen Mandal
@@ -227,9 +263,30 @@ export default function StaffManagement() {
     (mandal) => !formDistrictId || String(mandal.district_id) === String(formDistrictId)
   );
 
-  const roleOptions = STAFF_ROLE_CODES.map((code) => (
-    <option key={code} value={code}>{getRoleLabel(code, language)}</option>
-  ));
+  const roleLabel = (code, fallbackName) => {
+    if (!code) return "";
+    if (STAFF_ROLE_CODES.includes(code)) return getRoleLabel(code, language);
+    return fallbackName || customRoles.find((role) => role.code === code)?.name_en || code;
+  };
+
+  const customRoleLabel = (role) => {
+    const name = language === "te" && role.name_te ? role.name_te : role.name_en;
+    return `${name} (${role.code})`;
+  };
+  // Flat <option> list (no optgroup) so SelectField / HMR stay reliable.
+  const roleOptions = [
+    ...(customOnly ? [] : STAFF_ROLE_CODES.map((code) => (
+      <option key={`clinical-${code}`} value={code}>{getRoleLabel(code, language)}</option>
+    ))),
+    ...customRoles.map((role) => (
+      <option key={`custom-${role.code}`} value={role.code}>{customRoleLabel(role)}</option>
+    )),
+  ];
+  const filterRoleOptions = roleOptions;
+  const createRoleOptions = roleOptions;
+  const selectedPermissions = Array.isArray(selectedCustomRole?.permission_details)
+    ? selectedCustomRole.permission_details
+    : [];
   const specialtyName = (id) => {
     const specialty = options.specialties.find((item) => Number(item.id) === Number(id));
     return specialty ? getLocalizedMasterName(specialty, language) : id;
@@ -245,12 +302,19 @@ export default function StaffManagement() {
   const number = (value) => formatLocalizedNumber(value, language);
   const errorText = typeof error === "string" && error.startsWith("staff.") ? t(error) : error;
 
+  const pageTitle = customOnly
+    ? t("staff.customTitle")
+    : t(PAGE_TITLE_KEYS[pageRole] || "staff.title");
+  const pageSubtitle = customOnly
+    ? t("staff.customSubtitle")
+    : pageRole ? t("staff.districtSubtitle") : t("staff.subtitle");
+
   return (
     <div className="staff-page">
       <div className="staff-hero">
         <div>
-          <h1 className="page-title">{t(PAGE_TITLE_KEYS[pageRole] || "staff.title")}</h1>
-          <p className="page-subtitle">{pageRole ? t("staff.districtSubtitle") : t("staff.subtitle")}</p>
+          <h1 className="page-title">{pageTitle}</h1>
+          <p className="page-subtitle">{pageSubtitle}</p>
           {ownDistrict && (
             <span className="staff-district-chip"><MapPin size={14} /> {getLocalizedMasterName(ownDistrict, language)}</span>
           )}
@@ -279,7 +343,7 @@ export default function StaffManagement() {
           <TextField id="staff-search" icon={Search} label={t("staff.search")} value={filters.search} onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))} />
           {!pageRole && (
             <SelectField id="staff-role-filter" label={t("staff.role")} value={filters.role_code} onChange={(event) => setFilters((current) => ({ ...current, role_code: event.target.value }))}>
-              <option value="">{t("staff.allRoles")}</option>{roleOptions}
+              <option value="">{t("staff.allRoles")}</option>{filterRoleOptions}
             </SelectField>
           )}
           {canChooseDistrict && (
@@ -320,7 +384,7 @@ export default function StaffManagement() {
                       </div>
                     </div>
                   </td>
-                  <td data-label={t("staff.role")}>{getRoleLabel(item.role_code, language)}</td>
+                  <td data-label={t("staff.role")}>{roleLabel(item.role_code, item.role_name)}</td>
                   <td data-label={t("staff.district")}>{getLocalizedField(item, "district_name", language) || "-"}</td>
                   <td data-label={t("staff.facility")}>
                     {getLocalizedField(item, "facility_name", language) || "-"}
@@ -358,7 +422,7 @@ export default function StaffManagement() {
         open={createOpen}
         className="staff-modal"
         onClose={() => setCreateOpen(false)}
-        title={pageRole ? `${t("staff.addStaff")} - ${getRoleLabel(pageRole, language)}` : t("staff.addStaff")}
+        title={pageRole ? `${t("staff.addStaff")} - ${getRoleLabel(pageRole, language)}` : customOnly ? t("staff.customTitle") : t("staff.addStaff")}
         footer={<>
           <Button type="button" variant="secondary" onClick={() => setCreateOpen(false)}>{t("common.cancel")}</Button>
           <Button type="submit" form="staff-create-form" loading={saving}>{t("staff.create")}</Button>
@@ -367,7 +431,7 @@ export default function StaffManagement() {
         <div className="staff-create-intro">
           <span className="staff-create-icon" aria-hidden="true"><UserPlus size={22} /></span>
           <div>
-            <strong>{form.role_code ? getRoleLabel(form.role_code, language) : t("staff.selectRole")}</strong>
+            <strong>{form.role_code ? roleLabel(form.role_code, selectedCustomRole?.name_en) : t("staff.selectRole")}</strong>
             <p>{t("staff.createSubtitle")}</p>
           </div>
         </div>
@@ -378,8 +442,35 @@ export default function StaffManagement() {
               <SelectField id="staff-role" label={t("staff.role")} value={form.role_code} onChange={(event) => {
                 setForm((current) => ({ ...current, role_code: event.target.value, facility_id: "", specialty_ids: [], mandal_ids: [] }));
               }} required>
-                <option value="">{t("staff.selectRole")}</option>{roleOptions}
+                <option value="">{t("staff.selectRole")}</option>
+                {createRoleOptions}
               </SelectField>
+            )}
+            {!pageRole && customOnly && customRoles.length === 0 && (
+              <p className="staff-hint">{t("staff.noCustomRoles")}</p>
+            )}
+            {isCustomRoleSelected && (
+              <div className="staff-role-summary" aria-live="polite">
+                <p className="staff-hint">
+                  <strong>{t("staff.roleDescription")}: </strong>
+                  {selectedCustomRole.description || selectedCustomRole.code}
+                </p>
+                <div>
+                  <strong>{t("staff.permissionSummary")}</strong>
+                  {selectedPermissions.length === 0 ? (
+                    <p className="staff-hint">{t("staff.noPermissionsAssigned")}</p>
+                  ) : (
+                    <ul className="staff-permission-list">
+                      {selectedPermissions.map((permission) => (
+                        <li key={permission.code}>
+                          <code>{permission.code}</code>
+                          {permission.description ? ` — ${permission.description}` : ""}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
             )}
             <TextField id="staff-name" label={t("staff.fullName")} value={form.full_name} onChange={(event) => updateForm("full_name", event.target.value)} required />
             <TextField id="staff-email" label={t("staff.email")} type="email" value={form.email} onChange={(event) => updateForm("email", event.target.value)} required />
@@ -422,12 +513,12 @@ export default function StaffManagement() {
 
             <SelectField id="staff-facility" label={t("staff.facility")} value={form.facility_id} onChange={(event) => updateForm("facility_id", event.target.value)} disabled={facilityLocked} required>
               <option value="">{facilityLocked ? t(medicalOfficerForm ? "staff.chooseMandalFirst" : "staff.chooseDistrictFirst") : t("staff.selectFacility")}</option>
-              {facilityOptionsFor(form.role_code, formDistrictId, medicalOfficerForm ? form.mandal_ids[0] : "")}
+              {facilityOptionsFor(isCustomRoleSelected ? "" : form.role_code, formDistrictId, medicalOfficerForm ? form.mandal_ids[0] : "")}
             </SelectField>
 
-            {["SPECIALIST", "HOSPITAL_STAFF"].includes(form.role_code)
+            {!isCustomRoleSelected && ["SPECIALIST", "HOSPITAL_STAFF"].includes(form.role_code)
               && <p className="staff-hint">{t("staff.hospitalOnly")}</p>}
-            {form.role_code === "SPECIALIST" && (
+            {!isCustomRoleSelected && form.role_code === "SPECIALIST" && (
               <SelectField id="staff-specialties" label={t("staff.specialties")} value="" onChange={(event) => {
                 const id = Number(event.target.value);
                 if (id && !form.specialty_ids.includes(id)) updateForm("specialty_ids", [...form.specialty_ids, id]);

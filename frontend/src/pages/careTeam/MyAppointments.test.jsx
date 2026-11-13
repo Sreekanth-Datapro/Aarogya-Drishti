@@ -83,7 +83,8 @@ test("Health Worker My Appointments loads assigned consultations", async () => {
   expect(api.get).toHaveBeenCalledWith("/auth/me");
   expect(api.get).toHaveBeenCalledWith("/health-worker/appointments", { params: { filter: "upcoming" } });
   expect(mockUpdateUser).toHaveBeenCalled();
-  expect(screen.getByRole("button", { name: "myAppointments.join" })).toBeDisabled();
+  expect(screen.queryByRole("button", { name: "myAppointments.join" })).not.toBeInTheDocument();
+  expect(screen.getByText("myAppointments.joinUnavailable")).toBeInTheDocument();
 });
 
 test("Join is enabled for confirmed appointments inside the join window", async () => {
@@ -127,4 +128,75 @@ test("filter change requests today appointments", async () => {
   await waitFor(() => {
     expect(api.get).toHaveBeenCalledWith("/health-worker/appointments", { params: { filter: "today" } });
   });
+});
+
+test("Join Consultation is hidden after meeting end when can_join is false", async () => {
+  api.get.mockImplementation((path) => {
+    if (path === "/auth/me") {
+      return Promise.resolve({
+        data: {
+          user: {
+            id: "hw-1",
+            role: "HEALTH_WORKER",
+            permissions: ["video.join", "patient.read_assigned"],
+          },
+        },
+      });
+    }
+    return Promise.resolve({
+      data: {
+        appointments: [{
+          ...appointment,
+          can_join: false,
+          join_blocked_reason: "EXPIRED",
+          video_status: "EXPIRED",
+        }],
+      },
+    });
+  });
+
+  renderPage();
+  await screen.findByText("Test Patient");
+  expect(screen.queryByRole("button", { name: "myAppointments.join" })).not.toBeInTheDocument();
+  expect(screen.getByText("myAppointments.joinUnavailable")).toBeInTheDocument();
+});
+
+test("Navigator sees Reschedule for MISSED appointments", async () => {
+  api.get.mockImplementation((path) => {
+    if (path === "/auth/me") {
+      return Promise.resolve({
+        data: {
+          user: {
+            id: "nav-1",
+            role: "NAVIGATOR",
+            permissions: ["video.join", "appointment.book"],
+          },
+        },
+      });
+    }
+    return Promise.resolve({
+      data: {
+        appointments: [{
+          ...appointment,
+          appointment_status: "MISSED",
+          attendance: "NO_SHOW",
+          video_status: "MISSED",
+          can_join: false,
+          join_blocked_reason: "MISSED",
+          referral_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        }],
+      },
+    });
+  });
+
+  render(
+    <MemoryRouter>
+      <MyAppointments role="NAVIGATOR" />
+    </MemoryRouter>
+  );
+
+  await screen.findByText("Test Patient");
+  expect(screen.getByText("myAppointments.missedRescheduleHint")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "navigator.rescheduleAppointment" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "myAppointments.join" })).not.toBeInTheDocument();
 });

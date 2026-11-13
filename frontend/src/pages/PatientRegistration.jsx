@@ -208,26 +208,32 @@ export default function PatientRegistration() {
     return false;
   };
 
-  const saveAsOfflineDraft = async () => {
+  const buildDraftPayload = () => ({
+    ...registrationPayload(false),
+    full_name: form.full_name.trim(),
+    preferred_language_id: form.preferred_language_id
+      ? Number(form.preferred_language_id)
+      : null,
+    village_id: form.village_id ? Number(form.village_id) : null,
+    facility_id: form.facility_id ? Number(form.facility_id) : null,
+    mandal_id: form.mandal_id || "",
+    client_created_at: new Date().toISOString(),
+    consent_captured_at: new Date().toISOString(),
+  });
+
+  const persistDraft = async (status, successKey) => {
     const pin = getOfflinePin();
     if (!pin || !user?.id) {
       setError(t("offline.pinRequiredForDrafts"));
-      return;
+      return false;
     }
-    const payload = {
-      ...registrationPayload(false),
-      full_name: form.full_name.trim(),
-      preferred_language_id: Number(form.preferred_language_id),
-      client_created_at: new Date().toISOString(),
-      consent_captured_at: new Date().toISOString(),
-    };
     await saveRegistrationDraft({
       pin,
       userId: user.id,
-      payload,
-      status: DRAFT_STATUS.PENDING,
+      payload: buildDraftPayload(),
+      status,
     });
-    setSuccess(t("offline.draftSaved"));
+    setSuccess(t(successKey));
     setPotentialMatches([]);
     setForm((current) => ({
       ...emptyForm(current.preferred_language_id),
@@ -236,6 +242,29 @@ export default function PatientRegistration() {
       facility_id: current.facility_id,
     }));
     await refreshDrafts();
+    return true;
+  };
+
+  /** Incomplete form — stays on device until completed; never auto-synced. */
+  const saveLocalDraft = async () => {
+    setError("");
+    if (!form.full_name.trim()) {
+      setError(t("offline.localDraftNameRequired"));
+      return;
+    }
+    setSaving(true);
+    try {
+      await persistDraft(DRAFT_STATUS.LOCAL_DRAFT, "offline.localDraftSaved");
+    } catch (draftError) {
+      setError(draftError.message || t("offline.draftSaveFailed"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  /** Completed validated form — Pending Sync (eligible for server submit). */
+  const saveAsOfflineDraft = async () => {
+    await persistDraft(DRAFT_STATUS.PENDING, "offline.draftSaved");
   };
 
   const registerPatient = async (confirmPossibleDuplicate = false) => {
@@ -317,15 +346,25 @@ export default function PatientRegistration() {
       const loaded = await loadDraftPayload(pin, idempotencyKey);
       if (!loaded) return;
       const p = loaded.payload;
+      const villageId = p.village_id != null && p.village_id !== "" ? String(p.village_id) : "";
+      let mandalId = p.mandal_id != null && p.mandal_id !== "" ? String(p.mandal_id) : "";
+      if (!mandalId && villageId) {
+        const owner = mandals.find((mandal) =>
+          (mandal.villages || []).some((village) => String(village.id) === villageId)
+          || (mandal.pairs || []).some((pair) => String(pair.village_id) === villageId)
+        );
+        if (owner) mandalId = String(owner.mandal_id);
+      }
       setForm((current) => ({
         ...current,
         full_name: p.full_name || "",
         sex: p.sex || "",
-        age_years: p.age_years == null ? "" : String(p.age_years),
+        age_years: p.age_years == null || p.age_years === "" ? "" : String(p.age_years),
         date_of_birth: p.date_of_birth || "",
         preferred_language_id: p.preferred_language_id != null ? String(p.preferred_language_id) : current.preferred_language_id,
-        village_id: p.village_id != null ? String(p.village_id) : "",
-        facility_id: p.facility_id != null ? String(p.facility_id) : "",
+        mandal_id: mandalId || current.mandal_id,
+        village_id: villageId,
+        facility_id: p.facility_id != null && p.facility_id !== "" ? String(p.facility_id) : "",
         habitation: p.habitation || "",
         address_line: p.address_line || "",
         consents: p.consents || current.consents,
@@ -466,7 +505,15 @@ export default function PatientRegistration() {
                 <div>
                   <strong>{draft.display_name || t("offline.unnamedDraft")}</strong>
                   <small style={{ display: "block" }}>
-                    <Badge tone={draft.status === DRAFT_STATUS.FAILED ? "danger" : draft.status === DRAFT_STATUS.NEEDS_CONFIRMATION ? "warning" : "neutral"}>
+                    <Badge tone={
+                      draft.status === DRAFT_STATUS.FAILED
+                        ? "danger"
+                        : draft.status === DRAFT_STATUS.NEEDS_CONFIRMATION
+                          ? "warning"
+                          : draft.status === DRAFT_STATUS.LOCAL_DRAFT
+                            ? "neutral"
+                            : "info"
+                    }>
                       {t(`offline.status.${draft.status}`)}
                     </Badge>
                     {" · "}
@@ -474,10 +521,17 @@ export default function PatientRegistration() {
                   </small>
                   {draft.error_message && <small style={{ display: "block" }}>{draft.error_message}</small>}
                 </div>
-                <div style={{ display: "flex", gap: "0.5rem" }}>
+                <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
                   <Button type="button" variant="secondary" onClick={() => editDraft(draft.idempotency_key)}>
                     {t("offline.editDraft")}
                   </Button>
+                  {(draft.status === DRAFT_STATUS.FAILED
+                    || draft.status === DRAFT_STATUS.NEEDS_CONFIRMATION
+                    || draft.status === DRAFT_STATUS.PENDING) && isOnlineAuth && (
+                    <Button type="button" variant="secondary" loading={syncing} onClick={syncDraftsNow}>
+                      {t("offline.retrySync")}
+                    </Button>
+                  )}
                   <Button type="button" variant="ghost" onClick={() => discardDraft(draft.idempotency_key)}>
                     {t("offline.discardDraft")}
                   </Button>
@@ -742,6 +796,11 @@ export default function PatientRegistration() {
             }}>
               {t("patientRegistration.clear")}
             </Button>
+            {(isOffline || Boolean(getOfflinePin())) && (
+              <Button type="button" variant="secondary" loading={saving} onClick={saveLocalDraft}>
+                {t("offline.saveLocalDraft")}
+              </Button>
+            )}
             <Button type="submit" loading={saving} disabled={!mandals.length}>
               {shouldSaveOffline() ? t("offline.saveDraft") : t("patientRegistration.submit")}
             </Button>

@@ -206,6 +206,8 @@ async function notifyHospitalStaffForReferral(client, {
   requestId,
   patientId = null,
   excludeUserId = null,
+  title = null,
+  message = null,
 }) {
   const { rows } = await client.query(
     `SELECT DISTINCT staff.id
@@ -225,16 +227,62 @@ async function notifyHospitalStaffForReferral(client, {
         AND ($2::uuid IS NULL OR staff.id <> $2::uuid)`,
     [hospitalId, excludeUserId]
   );
+  let notified = 0;
   for (const staff of rows) {
-    await createCoordinationNotification(client, {
+    const created = await createCoordinationNotification(client, {
       recipientUserId: staff.id,
       event,
       requestId,
       patientId,
+      title,
+      message,
       targetPath: `/hospital-staff/appointments#video-availability-request-${requestId}`,
       dedupeKey: `${event}:${requestId}:${staff.id}`,
     });
+    if (created) notified += 1;
   }
+  return { staff_count: rows.length, notified };
+}
+
+/**
+ * Path B fan-out after diagnostic reassessment creates an availability request.
+ * Reuses the same helpers as createHospitalRequest / navigator preferred flows.
+ * Notifies Hospital Staff (final confirmation owners) and referral coordinators.
+ * Deduped per recipient. Never confirms a consultation.
+ */
+async function fanOutDiagnosticVideoAvailabilityNotifications(client, {
+  referral,
+  requestId,
+  excludeUserId = null,
+}) {
+  const hs = await notifyHospitalStaffForReferral(client, {
+    hospitalId: referral.to_hospital_id,
+    event: "NAVIGATOR_VIDEO_PREFERRED_TIME",
+    requestId,
+    patientId: referral.patient_id,
+    excludeUserId,
+    title: "Video availability requested",
+    message:
+      "Specialist requested a video consultation window after diagnostic reassessment. "
+      + "Hospital Staff must review and confirm — do not treat this as confirmed.",
+  });
+
+  // Mirror createHospitalRequest coordinator copy (Navigator), with a distinct dedupe suffix.
+  await notifyReferralCoordinators(client, {
+    referralId: referral.id,
+    event: "SPECIALIST_AVAILABILITY_REQUEST",
+    requestId,
+    title: "Video availability requested",
+    message:
+      "Specialist requested a video consultation window after diagnostic reassessment. "
+      + "Hospital Staff must complete final confirmation.",
+    dedupeSuffix: "diagnostic-path-b-nav",
+  });
+
+  return {
+    hospital_staff_notified: hs.notified,
+    hospital_staff_candidates: hs.staff_count,
+  };
 }
 
 function specialistResponseEvent(status) {
@@ -569,8 +617,10 @@ function requireVideoReferral(referral) {
   }
 }
 
-// CANCELLED video rows must never block a new booking. Keep the cancelled record
-// (and history) intact; only clear is_active so the old slot can be reused.
+const ACTIVE_VIDEO_STATUSES = ["REQUESTED", "CONFIRMED", "RESCHEDULED"];
+const REPLACEABLE_VIDEO_STATUSES = ["CANCELLED", "MISSED"];
+
+// Terminal rows must never block a new booking. Keep history intact; only clear is_active.
 async function releaseCancelledVideoConsultations(client, referralId) {
   await client.query(
     `UPDATE tbl_video_consultations consultation
@@ -579,24 +629,136 @@ async function releaseCancelledVideoConsultations(client, referralId) {
       WHERE consultation.referral_id = $1
         AND consultation.is_active IS TRUE
         AND status.id = consultation.status_id
-        AND status.code = 'CANCELLED'`,
-    [referralId]
+        AND status.code = ANY($2::text[])`,
+    [referralId, REPLACEABLE_VIDEO_STATUSES]
   );
 }
 
 async function findBlockingVideoConsultation(client, referralId, { forUpdate = false } = {}) {
   const { rows } = await client.query(
-    `SELECT consultation.id, status.code AS status
+    `SELECT consultation.id, status.code AS status, consultation.patient_id,
+            slot.slot_start, slot.slot_end
        FROM tbl_video_consultations consultation
        JOIN mst_appointment_statuses status ON status.id = consultation.status_id
+       JOIN tbl_consultation_slots slot ON slot.id = consultation.slot_id
       WHERE consultation.referral_id = $1
         AND consultation.is_active IS TRUE
-        AND status.code <> 'CANCELLED'
+        AND status.code = ANY($2::text[])
       ${forUpdate ? "FOR UPDATE OF consultation" : ""}
       LIMIT 1`,
-    [referralId]
+    [referralId, ACTIVE_VIDEO_STATUSES]
   );
   return rows[0] || null;
+}
+
+async function findBlockingActivePatientVideoConsultation(
+  client,
+  patientId,
+  { excludeReferralId = null, forUpdate = false } = {}
+) {
+  const params = [patientId, ACTIVE_VIDEO_STATUSES];
+  let excludeSql = "";
+  if (excludeReferralId) {
+    params.push(excludeReferralId);
+    excludeSql = `AND consultation.referral_id <> $${params.length}`;
+  }
+  const { rows } = await client.query(
+    `SELECT consultation.id, consultation.referral_id, status.code AS status,
+            slot.slot_start, slot.slot_end, patient.patient_code
+       FROM tbl_video_consultations consultation
+       JOIN mst_appointment_statuses status ON status.id = consultation.status_id
+       JOIN tbl_consultation_slots slot ON slot.id = consultation.slot_id
+       JOIN tbl_patients patient ON patient.id = consultation.patient_id
+      WHERE consultation.patient_id = $1
+        AND consultation.is_active IS TRUE
+        AND status.code = ANY($2::text[])
+        ${excludeSql}
+      ${forUpdate ? "FOR UPDATE OF consultation" : ""}
+      LIMIT 1`,
+    params
+  );
+  return rows[0] || null;
+}
+
+async function findBlockingActivePatientAvailabilityRequest(
+  client,
+  patientId,
+  { excludeReferralId = null, excludeRequestId = null, forUpdate = false } = {}
+) {
+  const params = [patientId, ACTIVE_REQUEST_STATES];
+  let excludeSql = "";
+  if (excludeReferralId) {
+    params.push(excludeReferralId);
+    excludeSql += ` AND availability.referral_id <> $${params.length}`;
+  }
+  if (excludeRequestId) {
+    params.push(excludeRequestId);
+    excludeSql += ` AND availability.id <> $${params.length}`;
+  }
+  const { rows } = await client.query(
+    `SELECT availability.id, availability.referral_id, availability.status,
+            availability.requested_start AS slot_start,
+            availability.requested_end AS slot_end,
+            patient.patient_code
+       FROM tbl_specialist_availability_requests availability
+       JOIN tbl_patients patient ON patient.id = availability.patient_id
+      WHERE availability.patient_id = $1
+        AND availability.status = ANY($2::text[])
+        ${excludeSql}
+      ${forUpdate ? "FOR UPDATE OF patient" : ""}
+      LIMIT 1`,
+    params
+  );
+  return rows[0] || null;
+}
+
+function activeAppointmentExistsError(blocking) {
+  const status = blocking?.status || null;
+  const when = blocking?.slot_start || null;
+  const code = blocking?.patient_code || null;
+  return new HttpError(
+    409,
+    blocking
+      ? `Patient already has an active video appointment${code ? ` (${code})` : ""}${status ? ` in status ${status}` : ""}${when ? ` scheduled ${when}` : ""}.`
+      : "Patient already has an active video appointment.",
+    "ACTIVE_APPOINTMENT_EXISTS"
+  );
+}
+
+async function assertNoOtherActivePatientVideoWork(
+  client,
+  patientId,
+  { excludeReferralId = null, excludeRequestId = null } = {}
+) {
+  // Always lock the patient row first so concurrent Path 1/Path 2 confirms for the
+  // same patient serialize even when no active consultation/request row exists yet.
+  const { rows: patientLock } = await client.query(
+    `SELECT id FROM tbl_patients WHERE id = $1 FOR UPDATE`,
+    [patientId]
+  );
+  if (!patientLock.length) {
+    throw new HttpError(404, "Patient not found", "PATIENT_NOT_FOUND");
+  }
+
+  const blockingConsultation = await findBlockingActivePatientVideoConsultation(
+    client,
+    patientId,
+    { excludeReferralId, forUpdate: true }
+  );
+  if (blockingConsultation) {
+    throw activeAppointmentExistsError(blockingConsultation);
+  }
+  const blockingRequest = await findBlockingActivePatientAvailabilityRequest(
+    client,
+    patientId,
+    { excludeReferralId, excludeRequestId, forUpdate: true }
+  );
+  if (blockingRequest) {
+    throw activeAppointmentExistsError({
+      ...blockingRequest,
+      status: `REQUEST_${blockingRequest.status}`,
+    });
+  }
 }
 
 async function findLatestCancelledVideoConsultationId(client, referralId) {
@@ -605,12 +767,46 @@ async function findLatestCancelledVideoConsultationId(client, referralId) {
        FROM tbl_video_consultations consultation
        JOIN mst_appointment_statuses status ON status.id = consultation.status_id
       WHERE consultation.referral_id = $1
-        AND status.code = 'CANCELLED'
+        AND status.code = ANY($2::text[])
       ORDER BY consultation.updated_at DESC NULLS LAST, consultation.created_at DESC
       LIMIT 1`,
-    [referralId]
+    [referralId, REPLACEABLE_VIDEO_STATUSES]
   );
   return rows[0]?.id || null;
+}
+
+async function markSourceConsultationRescheduled(client, sourceId, userId, reason) {
+  if (!sourceId) return null;
+  const { rows: statusRows } = await client.query(
+    "SELECT id FROM mst_appointment_statuses WHERE code = 'RESCHEDULED'"
+  );
+  if (!statusRows.length) {
+    throw new HttpError(500, "Appointment statuses are not configured", "CONFIGURATION_ERROR");
+  }
+  const { rows: current } = await client.query(
+    `SELECT consultation.id, consultation.status_id
+       FROM tbl_video_consultations consultation
+       JOIN mst_appointment_statuses status ON status.id = consultation.status_id
+      WHERE consultation.id = $1
+        AND status.code = ANY($2::text[])
+      FOR UPDATE OF consultation`,
+    [sourceId, REPLACEABLE_VIDEO_STATUSES]
+  );
+  if (!current.length) return null;
+  await client.query(
+    `UPDATE tbl_video_consultations
+        SET status_id = $2,
+            is_active = FALSE
+      WHERE id = $1`,
+    [sourceId, statusRows[0].id]
+  );
+  await client.query(
+    `INSERT INTO tbl_appointment_status_history
+       (video_consultation_id, from_status_id, to_status_id, changed_by, reason)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [sourceId, current[0].status_id, statusRows[0].id, userId, reason]
+  );
+  return sourceId;
 }
 
 function requireSignedVideoDecision(referral) {
@@ -809,9 +1005,18 @@ async function listSpecialistAppointments(userId) {
       LIMIT 200`,
     [userId]
   );
+  try {
+    await require("../services/videoConsultationService").finalizeExpiredVideoAttendance();
+  } catch (_error) {
+    // Specialist listing should still succeed if the opportunistic scanner fails.
+  }
+
   const { rows: consultations } = await pool.query(
     `SELECT consultation.id, consultation.patient_id, consultation.referral_id,
             consultation.specialist_id, consultation.slot_id,
+            consultation.is_active,
+            consultation.provider, consultation.room_ref, consultation.meeting_expires_at,
+            consultation.started_at, consultation.ended_at,
             status.code AS status,
             consultation.attendance::text AS attendance,
             patient.patient_code, patient.full_name AS patient_name,
@@ -834,8 +1039,7 @@ async function listSpecialistAppointments(userId) {
        JOIN tbl_users requester ON requester.id = consultation.requested_by
       WHERE consultation.specialist_id = $1
         AND referral.assigned_specialist_id = $1
-        AND consultation.is_active IS TRUE
-        AND status.code IN ('CONFIRMED', 'COMPLETED')
+        AND status.code IN ('CONFIRMED', 'COMPLETED', 'MISSED', 'RESCHEDULED')
         AND fn_user_has_patient_access($1, referral.patient_id)
         AND EXISTS (
           SELECT 1
@@ -864,13 +1068,46 @@ async function listSpecialistAppointments(userId) {
     [userId]
   );
 
+  const { deriveLifecycle, isVideoProviderConfigured } = require("./videoMeetingService");
+  const now = new Date();
+  const withJoin = consultations.map((consultation) => {
+    const lifecycle = deriveLifecycle({
+      statusCode: consultation.status,
+      isActive: consultation.is_active,
+      slotStart: consultation.scheduled_start,
+      slotEnd: consultation.scheduled_end,
+      meetingExpiresAt: consultation.meeting_expires_at,
+      attendance: consultation.attendance,
+      now,
+    });
+    const meetingReady = Boolean(consultation.provider && consultation.room_ref);
+    return {
+      ...consultation,
+      video_status: lifecycle.lifecycle_status,
+      can_join: lifecycle.can_join && meetingReady && isVideoProviderConfigured(),
+      join_blocked_reason: !meetingReady
+        ? "MEETING_NOT_READY"
+        : (!isVideoProviderConfigured() ? "VIDEO_PROVIDER_NOT_CONFIGURED" : lifecycle.join_blocked_reason),
+    };
+  });
+
   return {
     pending_requests: requests.filter((request) => request.status === "PENDING"),
     accepted_requests: requests.filter((request) =>
       ["ACCEPTED", "SUGGESTED"].includes(request.status)
     ),
-    confirmed_appointments: consultations.filter((consultation) => consultation.status === "CONFIRMED"),
-    completed_consultations: consultations.filter((consultation) => consultation.status === "COMPLETED"),
+    confirmed_appointments: withJoin.filter((consultation) =>
+      consultation.status === "CONFIRMED" && consultation.is_active !== false
+    ),
+    completed_consultations: withJoin.filter((consultation) =>
+      consultation.status === "COMPLETED" || consultation.attendance === "ATTENDED"
+    ),
+    missed_appointments: withJoin.filter((consultation) =>
+      consultation.status === "MISSED" || consultation.attendance === "NO_SHOW"
+    ),
+    rescheduled_appointments: withJoin.filter((consultation) =>
+      consultation.status === "RESCHEDULED"
+    ),
   };
 }
 
@@ -917,6 +1154,8 @@ async function lockEligibleReferral(client, userId, referralId) {
   return referral;
 }
 
+// Path 1: Hospital Staff confirms an already-published, unbooked Specialist slot
+// without creating a Specialist availability request cycle.
 async function directConfirmHospitalSlot(userId, req, input = {}) {
   const referralId = requireUuid(input.referral_id, "Invalid referral ID");
   const slotId = requireUuid(input.slot_id, "Invalid consultation slot ID");
@@ -929,6 +1168,9 @@ async function directConfirmHospitalSlot(userId, req, input = {}) {
       if (await findBlockingVideoConsultation(client, referral.id, { forUpdate: true })) {
         throw new HttpError(409, "An active video consultation already exists for this referral", "AVAILABILITY_REQUEST_EXISTS");
       }
+      await assertNoOtherActivePatientVideoWork(client, referral.patient_id, {
+        excludeReferralId: referral.id,
+      });
 
       const { rows: activeRequests } = await client.query(
         `SELECT id, status, requested_start, requested_end
@@ -1013,6 +1255,14 @@ async function directConfirmHospitalSlot(userId, req, input = {}) {
             : "Hospital Staff confirmed an existing Specialist video slot",
         ]
       );
+      if (rescheduledFromId) {
+        await markSourceConsultationRescheduled(
+          client,
+          rescheduledFromId,
+          userId,
+          "Original appointment marked RESCHEDULED after Hospital Staff confirmed a replacement slot"
+        );
+      }
 
       let requestId = staffReview?.id || null;
       if (staffReview) {
@@ -1156,7 +1406,7 @@ async function createHospitalRequest(userId, req, input = {}) {
         throw new HttpError(409, "An active video consultation already exists for this referral", "AVAILABILITY_REQUEST_EXISTS");
       }
     } else if (rescheduleConsultationId) {
-      // Cancelled consultations are released (is_active=false) but remain valid
+      // Cancelled/missed consultations are released (is_active=false) but remain valid
       // reschedule sources — never revive them; a new request/consultation is created.
       const { rows: cancelledRows } = await client.query(
         `SELECT consultation.id
@@ -1166,19 +1416,24 @@ async function createHospitalRequest(userId, req, input = {}) {
             AND consultation.referral_id = $2
             AND consultation.patient_id = $3
             AND consultation.specialist_id = $4
-            AND status.code = 'CANCELLED'
+            AND status.code = ANY($5::text[])
           FOR UPDATE OF consultation`,
         [
           rescheduleConsultationId,
           referral.id,
           referral.patient_id,
           referral.assigned_specialist_id,
+          REPLACEABLE_VIDEO_STATUSES,
         ]
       );
       if (!cancelledRows.length) {
-        throw new HttpError(409, "The video consultation is no longer available for rescheduling", "CONSULTATION_NOT_FOUND");
+      throw new HttpError(409, "The video consultation is no longer available for rescheduling", "CONSULTATION_NOT_FOUND");
       }
     }
+
+    await assertNoOtherActivePatientVideoWork(client, referral.patient_id, {
+      excludeReferralId: referral.id,
+    });
 
     const { rows } = await client.query(
       `INSERT INTO tbl_specialist_availability_requests
@@ -1280,6 +1535,13 @@ async function lockNavigatorReferral(client, userId, referralId) {
 async function createNavigatorPreferredRequest(userId, req, referralId, input = {}) {
   const lockedReferralId = requireUuid(referralId, "Invalid referral ID");
   const range = validateRange(input.requested_start, input.requested_end);
+  const reason = String(input.reason || "").trim();
+  const rescheduleConsultationId = input.reschedule_consultation_id
+    ? requireUuid(input.reschedule_consultation_id, "Invalid video consultation ID")
+    : null;
+  if (reason.length > 1000) {
+    throw new HttpError(400, "Reschedule reason must be 1000 characters or fewer", "VALIDATION_ERROR");
+  }
 
   return withTransaction(pool, async (client) => {
     await setActor(client, userId);
@@ -1297,13 +1559,42 @@ async function createNavigatorPreferredRequest(userId, req, referralId, input = 
     if (await findBlockingVideoConsultation(client, referral.id, { forUpdate: true })) {
       throw new HttpError(409, "An active video consultation already exists for this referral", "AVAILABILITY_REQUEST_EXISTS");
     }
+    await assertNoOtherActivePatientVideoWork(client, referral.patient_id, {
+      excludeReferralId: referral.id,
+    });
+
+    let sourceConsultationId = null;
+    if (rescheduleConsultationId) {
+      const { rows: sourceRows } = await client.query(
+        `SELECT consultation.id, status.code AS status_code
+           FROM tbl_video_consultations consultation
+           JOIN mst_appointment_statuses status ON status.id = consultation.status_id
+          WHERE consultation.id = $1
+            AND consultation.referral_id = $2
+            AND consultation.patient_id = $3
+            AND status.code = ANY($4::text[])
+          FOR UPDATE OF consultation`,
+        [rescheduleConsultationId, referral.id, referral.patient_id, REPLACEABLE_VIDEO_STATUSES]
+      );
+      if (!sourceRows.length) {
+        throw new HttpError(
+          409,
+          "Only missed or cancelled video appointments can be rescheduled",
+          "CONSULTATION_NOT_RESCHEDULABLE"
+        );
+      }
+      sourceConsultationId = sourceRows[0].id;
+    } else {
+      const latestReplaceable = await findLatestCancelledVideoConsultationId(client, referral.id);
+      sourceConsultationId = latestReplaceable || null;
+    }
 
     const { rows } = await client.query(
       `INSERT INTO tbl_specialist_availability_requests
          (referral_id, patient_id, specialist_id, hospital_id, specialty_id,
           requested_by, requested_start, requested_end, status)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'STAFF_REVIEW')
-       RETURNING id, referral_id, requested_start, requested_end, status`,
+       RETURNING id, referral_id, requested_start, requested_end, status, requested_by`,
       [
         referral.id,
         referral.patient_id,
@@ -1334,9 +1625,17 @@ async function createNavigatorPreferredRequest(userId, req, referralId, input = 
         specialist_id: referral.assigned_specialist_id,
         requested_start: range.start,
         requested_end: range.end,
+        reason: reason || null,
+        requesting_user_id: userId,
+        reschedule_consultation_id: sourceConsultationId,
+        is_reschedule: Boolean(sourceConsultationId),
       },
     });
-    return rows[0];
+    return {
+      ...rows[0],
+      reason: reason || null,
+      reschedule_consultation_id: sourceConsultationId,
+    };
   });
 }
 
@@ -1766,6 +2065,10 @@ async function confirmHospitalRequest(userId, req, requestId) {
       }
 
       await releaseCancelledVideoConsultations(client, request.referral_id);
+      await assertNoOtherActivePatientVideoWork(client, request.patient_id, {
+        excludeReferralId: request.referral_id,
+        excludeRequestId: request.id,
+      });
       const { rows: existingConsultations } = await client.query(
         `SELECT consultation.id, consultation.status_id,
                 consultation.attendance::text AS attendance,
@@ -1777,9 +2080,9 @@ async function confirmHospitalRequest(userId, req, requestId) {
             AND consultation.patient_id = $2
             AND consultation.specialist_id = $3
             AND consultation.is_active IS TRUE
-            AND status.code <> 'CANCELLED'
+            AND status.code = ANY($4::text[])
           FOR UPDATE OF consultation`,
-        [request.referral_id, request.patient_id, request.specialist_id]
+        [request.referral_id, request.patient_id, request.specialist_id, ACTIVE_VIDEO_STATUSES]
       );
       if (existingConsultations.length > 1) {
         throw new HttpError(409, "Multiple active video consultations already exist for this referral", "CONSULTATION_ALREADY_EXISTS");
@@ -1790,7 +2093,7 @@ async function confirmHospitalRequest(userId, req, requestId) {
         const existingConsultation = existingConsultations[0];
         if (!["REQUESTED", "RESCHEDULED"].includes(existingConsultation.status)
           || existingConsultation.attendance !== "PENDING") {
-          throw new HttpError(409, "An active video consultation already exists for this referral", "CONSULTATION_ALREADY_EXISTS");
+          throw activeAppointmentExistsError(existingConsultation);
         }
         const { rows } = await client.query(
           `UPDATE tbl_video_consultations
@@ -1846,6 +2149,14 @@ async function confirmHospitalRequest(userId, req, requestId) {
               : "Hospital Staff confirmed Specialist availability request",
           ]
         );
+        if (rescheduledFromId) {
+          await markSourceConsultationRescheduled(
+            client,
+            rescheduledFromId,
+            userId,
+            "Original appointment marked RESCHEDULED after Hospital Staff confirmed a replacement time"
+          );
+        }
       }
 
       await client.query(
@@ -2054,14 +2365,14 @@ async function getNavigatorVideoConsultations(userId, referralId) {
         AND fn_user_has_patient_access($1, referral.patient_id)
         AND (
           (consultation.is_active IS TRUE
-            AND NOT EXISTS (
-              SELECT 1 FROM tbl_specialist_availability_requests availability
-               WHERE availability.video_consultation_id = consultation.id
+        AND NOT EXISTS (
+          SELECT 1 FROM tbl_specialist_availability_requests availability
+           WHERE availability.video_consultation_id = consultation.id
             ))
-          OR status.code = 'CANCELLED'
+          OR status.code = ANY($3::text[])
         )
       ORDER BY video_slot.slot_start DESC`,
-    [userId, referralId]
+    [userId, referralId, [...REPLACEABLE_VIDEO_STATUSES, "RESCHEDULED"]]
   );
   return rows;
 }
@@ -2081,4 +2392,7 @@ module.exports = {
   declineHospitalRequest,
   getNavigatorRequests,
   getNavigatorVideoConsultations,
+  notifyHospitalStaffForReferral,
+  notifyReferralCoordinators,
+  fanOutDiagnosticVideoAvailabilityNotifications,
 };

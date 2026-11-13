@@ -63,6 +63,17 @@ function makeView(view, extras = {}) {
       { feature: "VISIBLE_ULCERS", scale: "0", note: null },
       { feature: "GUM_APPEARANCE_CHANGES", scale: "0", note: null },
     ],
+    visual_health_assessment_score: 87,
+    visual_health_assessment_score_message:
+      "Score calculated from the visual findings returned by the AI model.",
+    visual_health_assessment_score_reasons: [
+      { feature: "VISIBLE_REDNESS", scale: "1", points: 67, reason: "Visible redness: Mild appearance → 67/100" },
+      { feature: "POSSIBLE_SWELLING", scale: "0", points: 100, reason: "Possible swelling: Not observed → 100/100" },
+      { feature: "WHITE_OR_RED_PATCHES", scale: "0", points: 100, reason: "White/red patches: Not observed → 100/100" },
+      { feature: "VISIBLE_ULCERS", scale: "0", points: 100, reason: "Visible ulcers: Not observed → 100/100" },
+      { feature: "GUM_APPEARANCE_CHANGES", scale: "0", points: 100, reason: "Gum appearance changes: Not observed → 100/100" },
+    ],
+    visual_health_assessment_unassessable: [],
     not_assessable_reason: null,
     recommendation: "A Medical Officer must review the original image and clinical findings before making any decision.",
     image_quality: { status: "ACCEPTABLE", warnings: [], metrics: { width: 1200, height: 900 } },
@@ -348,6 +359,15 @@ const invalidAnalysisCases = [
     ];
   }],
   ["invalid selected category", (payload) => { payload.analysis.views[0].selected_category = "EYE"; }],
+  ["visual health score above one hundred", (payload) => {
+    payload.analysis.views[0].visual_health_assessment_score = 101;
+  }],
+  ["visual health score decimal", (payload) => {
+    payload.analysis.views[0].visual_health_assessment_score = 87.5;
+  }],
+  ["visual health score string", (payload) => {
+    payload.analysis.views[0].visual_health_assessment_score = "87";
+  }],
 ];
 
 test("accepts structured findings and NOT_ASSESSABLE views", async () => {
@@ -360,6 +380,10 @@ test("accepts structured findings and NOT_ASSESSABLE views", async () => {
       model_confidence: null,
       observation_confidence: null,
       possible_visual_findings: [],
+      visual_health_assessment_score: null,
+      visual_health_assessment_score_message:
+        "Score Not Available – insufficient usable visual findings.",
+      visual_health_assessment_score_reasons: [],
       not_assessable_reason: "Image too dark",
       observations: ["Image too dark"],
       abnormalities: [],
@@ -375,6 +399,8 @@ test("accepts structured findings and NOT_ASSESSABLE views", async () => {
         { feature: "VISIBLE_ULCERS", scale: "0", note: null },
         { feature: "GUM_APPEARANCE_CHANGES", scale: "0", note: null },
       ],
+      visual_health_assessment_score: 100,
+      visual_health_assessment_score_reasons: [],
       observations: ["No listed visual features were marked as present."],
       abnormalities: [],
     }),
@@ -384,6 +410,11 @@ test("accepts structured findings and NOT_ASSESSABLE views", async () => {
   expect(result.views.map((view) => view.model_status)).toEqual(["OK", "NOT_ASSESSABLE", "OK"]);
   expect(result.views[0].possible_visual_findings).toHaveLength(5);
   expect(result.assessments).toHaveLength(3);
+
+  const assessmentInserts = mockClient.query.mock.calls
+    .filter(([sql]) => sql.includes("INSERT INTO tbl_ai_assessments"));
+  // score column = visual_health_assessment_score / 100 (not model confidence)
+  expect(assessmentInserts.map(([, values]) => values[6])).toEqual([0.87, null, 1]);
 });
 
 test.each(invalidAnalysisCases)("rejects an AI response with %s", async (_label, invalidate) => {

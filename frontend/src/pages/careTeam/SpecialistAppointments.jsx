@@ -12,6 +12,8 @@ const EMPTY_APPOINTMENTS = {
   accepted_requests: [],
   confirmed_appointments: [],
   completed_consultations: [],
+  missed_appointments: [],
+  rescheduled_appointments: [],
 };
 
 function formatDate(value, language) {
@@ -74,6 +76,8 @@ export default function SpecialistAppointments() {
         accepted_requests: Array.isArray(data.accepted_requests) ? data.accepted_requests : [],
         confirmed_appointments: Array.isArray(data.confirmed_appointments) ? data.confirmed_appointments : [],
         completed_consultations: Array.isArray(data.completed_consultations) ? data.completed_consultations : [],
+        missed_appointments: Array.isArray(data.missed_appointments) ? data.missed_appointments : [],
+        rescheduled_appointments: Array.isArray(data.rescheduled_appointments) ? data.rescheduled_appointments : [],
       });
     } catch (requestError) {
       setError(requestError?.response?.data?.message || t("specialist.appointmentsLoadFailed"));
@@ -179,11 +183,12 @@ export default function SpecialistAppointments() {
                     {kind === "acceptedRequests" && (
                       <p className="care-muted">{t("specialist.appointmentAwaitingHospitalConfirmation")}</p>
                     )}
-                    {kind === "confirmedAppointments" && record.attendance && (
+                    {(kind === "confirmedAppointments" || kind === "missedAppointments" || kind === "completedConsultations")
+                      && record.attendance && (
                       <p><strong>{t("specialist.appointmentAttendance")}</strong> {record.attendance}</p>
                     )}
                   </div>
-                  {kind === "confirmedAppointments" && canJoin && (
+                  {kind === "confirmedAppointments" && canJoin && record.can_join && (
                     <div className="specialist-availability-request-actions">
                       <Button
                         size="sm"
@@ -192,6 +197,11 @@ export default function SpecialistAppointments() {
                         {t("myAppointments.join")}
                       </Button>
                     </div>
+                  )}
+                  {kind === "confirmedAppointments" && canJoin && !record.can_join && (
+                    <p className="care-muted" role="status">
+                      {t(`myAppointments.joinBlocked.${record.join_blocked_reason || "EXPIRED"}`)}
+                    </p>
                   )}
                   {kind === "pendingRequests" && (
                     <div className="specialist-availability-request-actions">
@@ -293,6 +303,8 @@ export default function SpecialistAppointments() {
                 <option value="accepted">{t("specialist.appointmentsFilterAccepted")}</option>
                 <option value="confirmed">{t("specialist.appointmentsFilterConfirmed")}</option>
                 <option value="completed">{t("specialist.appointmentsFilterCompleted")}</option>
+                <option value="missed">{t("specialist.appointmentsFilterMissed")}</option>
+                <option value="rescheduled">{t("specialist.appointmentsFilterRescheduled")}</option>
               </select>
             </label>
           </div>
@@ -302,6 +314,8 @@ export default function SpecialistAppointments() {
               ["accepted", t("specialist.acceptedRequestsSection"), appointments.accepted_requests, "acceptedRequests"],
               ["confirmed", t("specialist.confirmedAppointmentsSection"), appointments.confirmed_appointments, "confirmedAppointments"],
               ["completed", t("specialist.completedConsultationsSection"), appointments.completed_consultations, "completedConsultations"],
+              ["missed", t("specialist.missedAppointmentsSection"), appointments.missed_appointments, "missedAppointments"],
+              ["rescheduled", t("specialist.rescheduledAppointmentsSection"), appointments.rescheduled_appointments, "rescheduledAppointments"],
             ]
               .filter(([key]) => statusFilter === "all" || statusFilter === key)
               .map(([, title, records, kind]) => renderSection(title, records, kind))}

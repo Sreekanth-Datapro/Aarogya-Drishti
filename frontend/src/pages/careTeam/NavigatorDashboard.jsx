@@ -6,6 +6,7 @@ import { useAuth } from "../../context/AuthContext";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { Alert, BarChart, StatCard } from "../../components/ui";
 import DashboardBanner from "../../components/dashboard/DashboardBanner";
+import NavigatorHwReportsInbox from "./NavigatorHwReportsInbox";
 import "./NavigatorDashboard.css";
 
 const PAGE_SIZE = 10;
@@ -122,6 +123,21 @@ export default function NavigatorDashboard() {
     setSelected(null);
   }, [location.pathname]);
 
+  useEffect(() => {
+    const openReferralId = location.state?.openReferralId;
+    if (!openReferralId || location.pathname !== "/navigator/referrals") return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await api.get(`/navigator/referrals/${openReferralId}`);
+        if (!cancelled) setSelected(response.data);
+      } catch (_error) {
+        if (!cancelled) setActionError(t("navigator.detailFailed"));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [location.pathname, location.state, t]);
+
   const openReferral = async (referralId) => {
     setActionError("");
     setSuccess("");
@@ -200,18 +216,21 @@ export default function NavigatorDashboard() {
     setActionError("");
     setSuccess("");
     try {
+      const replaceable = (selected?.video_consultations || []).find(
+        (consultation) => ["CANCELLED", "MISSED"].includes(consultation.status_code)
+      );
       await api.post(`/navigator/referrals/${selected.referral.id}/video-preferred-time`, {
         requested_start: new Date(values.get("requested_start")).toISOString(),
         requested_end: new Date(values.get("requested_end")).toISOString(),
+        reason: String(values.get("reason") || "").trim() || undefined,
+        reschedule_consultation_id: replaceable?.id || undefined,
       });
       form.reset();
-      const wasCancelledReschedule = (selected?.video_consultations || []).some(
-        (consultation) => consultation.status_code === "CANCELLED"
-      );
+      const wasMissedOrCancelledReschedule = Boolean(replaceable);
       await refreshSelected();
       await loadPage(true);
       setSuccess(
-        wasCancelledReschedule
+        wasMissedOrCancelledReschedule
           ? t("navigator.rescheduleAppointmentSubmitted")
           : t("navigator.videoPreferredTimeSubmitted")
       );
@@ -227,15 +246,16 @@ export default function NavigatorDashboard() {
   const hasActiveVideoRequest = (selected?.video_availability_requests || []).some((request) =>
     ["STAFF_REVIEW", "PENDING", "ACCEPTED", "SUGGESTED"].includes(request.status)
   );
-  const hasCancelledVideoAppointment = (selected?.video_consultations || []).some(
-    (consultation) => consultation.status_code === "CANCELLED"
+  const hasReplaceableVideoAppointment = (selected?.video_consultations || []).some(
+    (consultation) => ["CANCELLED", "MISSED"].includes(consultation.status_code)
   );
   const hasActiveVideoAppointment = (selected?.video_consultations || []).some(
-    (consultation) => consultation.status_code !== "CANCELLED" && consultation.is_active !== false
+    (consultation) => consultation.is_active !== false
+      && ["REQUESTED", "CONFIRMED", "RESCHEDULED"].includes(consultation.status_code)
   );
   const canRescheduleCancelledVideo = canBookAppointment
     && isVideoReferral
-    && hasCancelledVideoAppointment
+    && hasReplaceableVideoAppointment
     && !hasActiveVideoAppointment
     && !hasActiveVideoRequest;
   const showVideoPreferredTimeForm = canBookAppointment
@@ -291,6 +311,8 @@ export default function NavigatorDashboard() {
           ]} />
         ) : <p className="district-empty">{t("navigator.emptyText")}</p>}
       </section>
+
+      <NavigatorHwReportsInbox />
 
       <section className="district-card navigator-queue" aria-labelledby="navigator-queue-heading">
         <div className="navigator-queue-heading">
@@ -467,7 +489,8 @@ export default function NavigatorDashboard() {
                         {readableDate(consultation.slot_start, language)} – {readableDate(consultation.slot_end, language)}
                       </span>
                       <small>{consultation.specialist_name} · {consultation.hospital_name}</small>
-                      {consultation.status_code === "CANCELLED" && canRescheduleCancelledVideo && (
+                      {["CANCELLED", "MISSED"].includes(consultation.status_code)
+                        && canRescheduleCancelledVideo && (
                         <button
                           className="btn btn-secondary"
                           type="button"
@@ -586,6 +609,11 @@ export default function NavigatorDashboard() {
                 <label>{t("navigator.preferredEnd")}
                   <input name="requested_end" type="datetime-local" required min={localDateTimeMin()} />
                 </label>
+                {canRescheduleCancelledVideo && (
+                  <label>{t("navigator.rescheduleReason")}
+                    <textarea name="reason" rows="3" maxLength="1000" required />
+                  </label>
+                )}
                 <p className="navigator-safety-note">{t("navigator.videoPreferredTimeNote")}</p>
                 <button className="btn btn-primary" type="submit" disabled={submittingPreferredTime}>
                   {submittingPreferredTime

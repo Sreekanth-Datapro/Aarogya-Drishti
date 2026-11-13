@@ -16,6 +16,11 @@ from oral_analysis import (
     MAX_IMAGE_BYTES,
     GemmaCloudVision,
     InvalidImageError,
+    VISUAL_HEALTH_SCORE_EXPLAINED,
+    VISUAL_HEALTH_SCORE_UNAVAILABLE,
+    calibrate_observation_confidence,
+    compute_image_quality_score,
+    compute_visual_health_assessment_score,
     extract_json_response,
     inspect_image_quality,
     prepare_image,
@@ -112,6 +117,51 @@ class ImageValidationTests(unittest.TestCase):
         _, _, quality = prepare_image(image_bytes(checkerboard=True), "image/png")
         self.assertEqual(quality["status"], "ACCEPTABLE")
         self.assertEqual(quality["warnings"], [])
+
+    def test_image_quality_score_differs_across_synthetic_images(self):
+        _, _, clear = prepare_image(image_bytes(checkerboard=True), "image/png")
+        dark = inspect_image_quality(Image.new("RGB", (800, 600), (0, 0, 0)))
+        bright = inspect_image_quality(Image.new("RGB", (800, 600), (255, 255, 255)))
+        blurry = inspect_image_quality(Image.new("RGB", (800, 600), (120, 120, 120)))
+        tiny = inspect_image_quality(Image.new("RGB", (200, 200), (120, 120, 120)))
+
+        clear_report = clear["score_report"]
+        self.assertEqual(clear_report["status"], "SCORED")
+        self.assertIsInstance(clear_report["score"], int)
+        self.assertGreaterEqual(clear_report["score"], 80)
+
+        for label, quality in (
+            ("dark", dark),
+            ("bright", bright),
+            ("blurry", blurry),
+            ("tiny", tiny),
+        ):
+            with self.subTest(image=label):
+                report = quality["score_report"]
+                self.assertEqual(report["status"], "INSUFFICIENT")
+                self.assertIsNone(report["score"])
+                self.assertLess(report["raw_score"], clear_report["score"])
+                self.assertEqual(report["label"], "Insufficient Image Quality")
+                self.assertTrue(report["criteria"])
+                self.assertNotEqual(report["raw_score"], 100)
+
+    def test_calibrated_confidence_never_exceeds_quality_or_defaults_to_100_on_failure(self):
+        quality = inspect_image_quality(Image.new("RGB", (800, 600), (0, 0, 0)))
+        report = quality["score_report"]
+        self.assertIsNone(
+            calibrate_observation_confidence(100, report, "OK", [{"scale": "0"}])
+        )
+
+        _, _, clear = prepare_image(image_bytes(checkerboard=True), "image/png")
+        clear_report = clear["score_report"]
+        capped = calibrate_observation_confidence(100, clear_report, "OK", [{"scale": "0"}])
+        self.assertEqual(capped, clear_report["score"])
+        self.assertLessEqual(capped, 100)
+
+        self.assertEqual(
+            calibrate_observation_confidence(90, clear_report, "NOT_ASSESSABLE", []),
+            30,
+        )
 
     def test_confidence_accepts_integers_and_whole_number_coercion(self):
         for confidence, expected in ((0, 0), (40, 40), (100, 100), (85.0, 85), ("85", 85)):
@@ -320,7 +370,20 @@ class ScreeningEndpointTests(unittest.TestCase):
         self.assertEqual(analysis["screening_reference"], SCREENING_REFERENCE)
         self.assertEqual([item["view"] for item in analysis["views"]], ["FRONT_VIEW", "LEFT_VIEW", "RIGHT_VIEW"])
         self.assertEqual([item["classification"] for item in analysis["views"]], ["UNCERTAIN"] * 3)
-        self.assertEqual([item["model_confidence"] for item in analysis["views"]], [40] * 3)
+        # UNCERTAIN/NOT_ASSESSABLE confidence is capped (never left as an unearned 100).
+        self.assertEqual([item["model_confidence"] for item in analysis["views"]], [30] * 3)
+        self.assertTrue(all(view["overall_clinical_score"] is None for view in analysis["views"]))
+        self.assertTrue(
+            all("clinician assessment required" in view["overall_clinical_score_message"].lower()
+                for view in analysis["views"])
+        )
+        # Legacy UNCERTAIN payloads have no structured findings → Score Not Available.
+        self.assertTrue(all(view["visual_health_assessment_score"] is None for view in analysis["views"]))
+        self.assertTrue(
+            all("insufficient usable visual findings" in view["visual_health_assessment_score_message"].lower()
+                for view in analysis["views"])
+        )
+        self.assertTrue(all(view["image_quality_score"]["status"] == "SCORED" for view in analysis["views"]))
         self.assertTrue(all("not a disease probability" in item["confidence_meaning"] for item in analysis["views"]))
         self.assertEqual(analysis["review_status"], "PENDING_MEDICAL_OFFICER_REVIEW")
         self.assertEqual(self.analysis.await_count, 3)
@@ -347,7 +410,7 @@ class ScreeningEndpointTests(unittest.TestCase):
         self.assertIsNone(left["model_confidence"])
         self.assertIn("MODEL_RESPONSE_INVALID", left["uncertainty_warnings"])
         self.assertFalse(left["model_information"]["model_output_usable"])
-        self.assertEqual(views[0]["model_confidence"], 40)
+        self.assertEqual(views[0]["model_confidence"], 30)
         self.assertTrue(views[2]["model_information"]["model_output_usable"])
         self.assertIn("LEFT_VIEW could not be used: The vision model confidence must be an integer", "\n".join(logs.output))
 
@@ -500,6 +563,151 @@ class ScreeningEndpointTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 413)
         self.analysis.assert_not_awaited()
+
+    def test_dark_images_return_insufficient_quality_without_a_fixed_100_score(self):
+        dark_png = io.BytesIO()
+        Image.new("RGB", (800, 600), (0, 0, 0)).save(dark_png, format="PNG")
+        dark_bytes = dark_png.getvalue()
+        files = {
+            field: (f"{field}.png", io.BytesIO(dark_bytes), "image/png")
+            for field in ("front", "left", "right")
+        }
+        response = self.client.post(
+            "/api/analyze-screening",
+            data={"screening_reference": SCREENING_REFERENCE},
+            files=files,
+        )
+        self.assertEqual(response.status_code, 200)
+        views = response.json()["analysis"]["views"]
+        self.analysis.assert_not_awaited()
+        for view in views:
+            self.assertEqual(view["classification"], "UNCERTAIN")
+            self.assertIsNone(view["model_confidence"])
+            self.assertEqual(view["image_quality_score"]["status"], "INSUFFICIENT")
+            self.assertIsNone(view["image_quality_score"]["score"])
+            self.assertEqual(view["image_quality_score"]["label"], "Insufficient Image Quality")
+            self.assertIsNone(view["overall_clinical_score"])
+            self.assertIsNone(view["visual_health_assessment_score"])
+            self.assertIn("insufficient usable visual findings", view["visual_health_assessment_score_message"].lower())
+
+
+class VisualHealthAssessmentScoreTests(unittest.TestCase):
+    def test_usable_findings_produce_deterministic_score(self):
+        findings = [
+            {"feature": "VISIBLE_REDNESS", "scale": "0", "note": None},
+            {"feature": "POSSIBLE_SWELLING", "scale": "0", "note": None},
+            {"feature": "WHITE_OR_RED_PATCHES", "scale": "0", "note": None},
+            {"feature": "VISIBLE_ULCERS", "scale": "0", "note": None},
+            {"feature": "GUM_APPEARANCE_CHANGES", "scale": "0", "note": None},
+        ]
+        report = compute_visual_health_assessment_score(findings, model_status="OK")
+        self.assertEqual(report["visual_health_assessment_score"], 100)
+        self.assertEqual(report["visual_health_assessment_score_message"], VISUAL_HEALTH_SCORE_EXPLAINED)
+        self.assertEqual(len(report["visual_health_assessment_score_reasons"]), 5)
+
+    def test_different_appearance_scales_produce_different_scores(self):
+        mild = compute_visual_health_assessment_score(
+            [{"feature": "VISIBLE_REDNESS", "scale": "1", "note": None}],
+            model_status="OK",
+        )
+        moderate = compute_visual_health_assessment_score(
+            [{"feature": "VISIBLE_REDNESS", "scale": "2", "note": None}],
+            model_status="OK",
+        )
+        prominent = compute_visual_health_assessment_score(
+            [{"feature": "VISIBLE_REDNESS", "scale": "3", "note": None}],
+            model_status="OK",
+        )
+        self.assertEqual(mild["visual_health_assessment_score"], 67)
+        self.assertEqual(moderate["visual_health_assessment_score"], 33)
+        self.assertEqual(prominent["visual_health_assessment_score"], 0)
+        self.assertGreater(
+            mild["visual_health_assessment_score"],
+            moderate["visual_health_assessment_score"],
+        )
+        self.assertGreater(
+            moderate["visual_health_assessment_score"],
+            prominent["visual_health_assessment_score"],
+        )
+
+    def test_missing_findings_return_null(self):
+        report = compute_visual_health_assessment_score([], model_status="OK")
+        self.assertIsNone(report["visual_health_assessment_score"])
+        self.assertEqual(report["visual_health_assessment_score_message"], VISUAL_HEALTH_SCORE_UNAVAILABLE)
+
+    def test_only_na_findings_return_score_not_available(self):
+        report = compute_visual_health_assessment_score(
+            [
+                {"feature": "VISIBLE_REDNESS", "scale": "N/A", "note": "blur"},
+                {"feature": "POSSIBLE_SWELLING", "scale": "N/A", "note": None},
+            ],
+            model_status="OK",
+        )
+        self.assertIsNone(report["visual_health_assessment_score"])
+        self.assertEqual(report["visual_health_assessment_score_message"], VISUAL_HEALTH_SCORE_UNAVAILABLE)
+        self.assertEqual(len(report["visual_health_assessment_unassessable"]), 2)
+
+    def test_not_assessable_status_returns_null(self):
+        report = compute_visual_health_assessment_score(
+            [{"feature": "VISIBLE_REDNESS", "scale": "0", "note": None}],
+            model_status="NOT_ASSESSABLE",
+        )
+        self.assertIsNone(report["visual_health_assessment_score"])
+
+    def test_model_confidence_does_not_affect_score(self):
+        findings = [
+            {"feature": "VISIBLE_REDNESS", "scale": "1", "note": None},
+            {"feature": "POSSIBLE_SWELLING", "scale": "2", "note": None},
+        ]
+        low = compute_visual_health_assessment_score(findings, model_status="OK")
+        high = compute_visual_health_assessment_score(findings, model_status="OK")
+        self.assertEqual(low["visual_health_assessment_score"], high["visual_health_assessment_score"])
+        self.assertEqual(low["visual_health_assessment_score"], 50)
+
+    def test_image_quality_does_not_affect_score(self):
+        findings = [{"feature": "VISIBLE_ULCERS", "scale": "3", "note": None}]
+        report = compute_visual_health_assessment_score(findings, model_status="OK")
+        self.assertEqual(report["visual_health_assessment_score"], 0)
+        # Function has no quality/brightness parameters — score is findings-only.
+        self.assertEqual(report["visual_health_assessment_score_reasons"][0]["points"], 0)
+
+    def test_validate_ai_result_does_not_score_padded_defaults_as_healthy(self):
+        # Model returned only one finding; omitted features are padded later as "0"
+        # but must not inflate the visual health score toward 100.
+        result = validate_ai_result(
+            {
+                "selected_category": "MOUTH",
+                "model_status": "OK",
+                "image_quality": "GOOD",
+                "observation_confidence": 100,
+                "not_assessable_reason": None,
+                "possible_visual_findings": [
+                    {"feature": "VISIBLE_REDNESS", "scale": "3", "note": "clear ulceration"},
+                ],
+            },
+            view="FRONT_VIEW",
+            category="MOUTH",
+        )
+        self.assertEqual(result["visual_health_assessment_score"], 0)
+        self.assertEqual(len(result["possible_visual_findings"]), 5)
+        self.assertEqual(result["observation_confidence"], 100)
+        # Confidence stayed 100 but score did not become 100.
+        self.assertNotEqual(result["visual_health_assessment_score"], result["observation_confidence"])
+
+    def test_invalid_legacy_output_without_findings_is_score_not_available(self):
+        result = validate_ai_result(
+            {
+                "classification": "ABNORMAL",
+                "confidence": 95,
+                "observations": ["Color change."],
+                "abnormalities": ["Color change."],
+                "recommendation": "Medical Officer review required.",
+                "image_quality": "FAIR",
+            }
+        )
+        self.assertIsNone(result["visual_health_assessment_score"])
+        self.assertEqual(result["visual_health_assessment_score_message"], VISUAL_HEALTH_SCORE_UNAVAILABLE)
+        self.assertEqual(result["confidence"], 95)
 
 
 if __name__ == "__main__":

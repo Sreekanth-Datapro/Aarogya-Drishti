@@ -339,3 +339,123 @@
     align-items: flex-start;
   }
 }
+
+.care-clinical-notes-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.care-clinical-note-card {
+  display: grid;
+  gap: 10px;
+}
+
+.care-clinical-note-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.care-clinical-note-head > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.care-clinical-note-body {
+  display: grid;
+  gap: 14px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(15, 118, 110, 0.15);
+}
+
+.care-clinical-note-body h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 6px;
+  font-size: 0.95rem;
+}
+
+.video-meeting-layout {
+  display: grid;
+  gap: 14px;
+}
+
+@media (min-width: 1100px) {
+  .video-meeting-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+    align-items: start;
+  }
+}
+
+.video-clinical-notes {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(15, 118, 110, 0.18);
+  background: linear-gradient(180deg, #f7fbf9 0%, #ffffff 60%);
+  max-height: min(80vh, 900px);
+  overflow: auto;
+}
+
+.video-clinical-notes-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.video-clinical-notes-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 1rem;
+}
+
+.video-clinical-order {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(15, 118, 110, 0.12);
+  background: #fff;
+}
+
+.video-clinical-order-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.video-clinical-block h3 {
+  margin: 0 0 4px;
+  font-size: 0.9rem;
+}
+
+.video-clinical-block p,
+.video-clinical-block li {
+  margin: 0 0 6px;
+  font-size: 0.88rem;
+  color: #234;
+}
+
+.video-clinical-block ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.video-clinical-block li {
+  display: grid;
+  gap: 2px;
+}

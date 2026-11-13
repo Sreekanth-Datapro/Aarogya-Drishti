@@ -202,6 +202,27 @@
   cursor: not-allowed;
 }
 
+.staff-role-summary {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted, #f8fafc);
+}
+
+.staff-permission-list {
+  margin: var(--space-2) 0 0;
+  padding-left: 1.2rem;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.staff-permission-list code {
+  font-size: 0.85em;
+}
+
 .staff-hint {
   grid-column: 1 / -1;
   margin: 0;

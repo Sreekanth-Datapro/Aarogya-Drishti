@@ -86,7 +86,12 @@ describe("authorization policy", () => {
       "role.manage",
       "district_admin.manage",
     ]);
+    expect(getEffectivePermissions("SYSTEM_ADMIN", [])).toEqual(["role.manage"]);
     expect(getEffectivePermissions("SYSTEM_ADMIN", ["role.manage"])).toEqual(["role.manage"]);
+    expect(getEffectivePermissions("SYSTEM_ADMIN", ["master.view"])).toEqual([
+      "master.view",
+      "role.manage",
+    ]);
     expect(getEffectivePermissions("DISTRICT_ADMIN", [])).toEqual(["user.create_staff"]);
   });
 

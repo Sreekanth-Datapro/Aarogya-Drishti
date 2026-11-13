@@ -46,6 +46,26 @@ describe("videoMeetingService (public meet.jit.si)", () => {
       now: new Date("2035-06-01T10:05:00.000Z"),
     });
     expect(cancelled).toMatchObject({ can_join: false, join_blocked_reason: "CANCELLED" });
+
+    const missed = deriveLifecycle({
+      statusCode: "MISSED",
+      isActive: false,
+      slotStart: start,
+      slotEnd: end,
+      attendance: "NO_SHOW",
+      now: new Date("2035-06-01T10:05:00.000Z"),
+    });
+    expect(missed).toMatchObject({ can_join: false, join_blocked_reason: "MISSED" });
+
+    const afterEnd = deriveLifecycle({
+      statusCode: "CONFIRMED",
+      isActive: true,
+      slotStart: start,
+      slotEnd: end,
+      attendance: "PENDING",
+      now: new Date("2035-06-01T11:00:00.000Z"),
+    });
+    expect(afterEnd).toMatchObject({ can_join: false, join_blocked_reason: "EXPIRED" });
   });
 
   test("public meeting access returns domain and room without a Jitsi JWT", () => {

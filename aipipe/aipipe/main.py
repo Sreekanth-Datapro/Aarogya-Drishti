@@ -10,11 +10,18 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from cloudflare_vision import CloudflareWorkersAIClient, DEFAULT_MODEL
 from oral_analysis import (
+    CLINICAL_SCORE_UNAVAILABLE,
     CLINICIAN_REVIEW_RECOMMENDATION,
+    INSUFFICIENT_IMAGE_QUALITY,
     MAX_IMAGE_BYTES,
     GemmaCloudVision,
     InvalidImageError,
     OralVisionModel,
+    build_criterion_scores,
+    calibrate_observation_confidence,
+    compute_visual_health_assessment_score,
+    VISUAL_HEALTH_SCORE_UNAVAILABLE,
+    compute_image_quality_score,
     extract_json_response as _extract_json_response,
     prepare_image,
     validate_ai_result as _validate_ai_result,
@@ -197,10 +204,14 @@ def build_view_result(
     selected_category: str = "MOUTH",
     model_output_invalid: bool = False,
 ) -> dict:
+    quality_report = quality.get("score_report") or compute_image_quality_score(quality)
     warnings = ["IMAGE_QUALITY_NEEDS_REVIEW"] if quality["warnings"] else []
+    inference_performed = model_result is not None or model_output_invalid
+    quality_insufficient = quality_report.get("status") == "INSUFFICIENT"
+
     if model_output_invalid:
         classification = "UNCERTAIN"
-        confidence = None
+        raw_confidence = None
         observations = ["The AI model's answer for this view could not be used, so no automated observation is available."]
         abnormalities = []
         model_image_quality = "UNKNOWN"
@@ -208,19 +219,30 @@ def build_view_result(
         findings = []
         not_assessable_reason = "The AI model's answer for this view could not be used."
         warnings.extend(["MODEL_RESPONSE_INVALID", "CLINICIAN_REVIEW_REQUIRED"])
-    elif model_result is None:
+        usable_model = False
+    elif model_result is None or quality_insufficient:
         classification = "UNCERTAIN"
-        confidence = None
-        observations = ["Automated visual analysis was not performed because the image quality check needs review."]
+        raw_confidence = None
+        observations = [
+            INSUFFICIENT_IMAGE_QUALITY
+            if quality_insufficient
+            else "Automated visual analysis was not performed because the image quality check needs review."
+        ]
         abnormalities = []
         model_image_quality = "POOR"
         model_status = "NOT_ASSESSABLE"
         findings = []
-        not_assessable_reason = "Image quality check needs review before visual analysis."
+        not_assessable_reason = (
+            quality_report.get("label")
+            or "Image quality check needs review before visual analysis."
+        )
         warnings.append("CLINICIAN_REVIEW_REQUIRED")
+        if "IMAGE_QUALITY_NEEDS_REVIEW" not in warnings:
+            warnings.insert(0, "IMAGE_QUALITY_NEEDS_REVIEW")
+        usable_model = False
     else:
         classification = model_result["classification"]
-        confidence = model_result["confidence"]
+        raw_confidence = model_result["confidence"]
         observations = model_result["observations"]
         abnormalities = model_result["abnormalities"]
         model_image_quality = model_result["image_quality"]
@@ -230,6 +252,43 @@ def build_view_result(
         selected_category = model_result.get("selected_category") or selected_category
         if classification == "UNCERTAIN":
             warnings.append("MODEL_RESULT_UNCERTAIN")
+        usable_model = True
+
+    confidence = calibrate_observation_confidence(
+        raw_confidence,
+        quality_report,
+        model_status,
+        findings,
+    )
+    criterion_scores = build_criterion_scores(findings)
+
+    # Prefer score already computed from model-returned findings (pre-pad) in validate_ai_result.
+    if usable_model and model_result and "visual_health_assessment_score" in model_result:
+        visual_score = {
+            "visual_health_assessment_score": model_result.get("visual_health_assessment_score"),
+            "visual_health_assessment_score_message": model_result.get(
+                "visual_health_assessment_score_message"
+            ) or VISUAL_HEALTH_SCORE_UNAVAILABLE,
+            "visual_health_assessment_score_reasons": model_result.get(
+                "visual_health_assessment_score_reasons"
+            ) or [],
+            "visual_health_assessment_unassessable": model_result.get(
+                "visual_health_assessment_unassessable"
+            ) or [],
+        }
+    else:
+        visual_score = compute_visual_health_assessment_score(
+            findings if usable_model else [],
+            model_status=model_status if usable_model else "NOT_ASSESSABLE",
+        )
+
+    visual_score_value = visual_score["visual_health_assessment_score"]
+    if visual_score_value is not None:
+        if not isinstance(visual_score_value, int) or not 0 <= visual_score_value <= 100:
+            visual_score = compute_visual_health_assessment_score(
+                [],
+                model_status="NOT_ASSESSABLE",
+            )
 
     return {
         "view": view,
@@ -239,20 +298,30 @@ def build_view_result(
         "model_status": model_status,
         "model_confidence": confidence,
         "observation_confidence": confidence,
-        "confidence_meaning": "Model confidence only; it is not a disease probability or severity score.",
+        "raw_model_confidence": raw_confidence,
+        "confidence_meaning": (
+            "Calibrated observation confidence only; capped by technical image quality. "
+            "It is not a disease probability, severity score, or overall clinical screening score."
+        ),
         "possible_visual_findings": findings,
+        "criterion_scores": criterion_scores,
+        "image_quality_score": quality_report,
+        "overall_clinical_score": None,
+        "overall_clinical_score_message": CLINICAL_SCORE_UNAVAILABLE,
+        **visual_score,
         "not_assessable_reason": not_assessable_reason,
         "observations": observations,
         "abnormalities": abnormalities,
         "recommendation": CLINICIAN_REVIEW_RECOMMENDATION,
         "image_quality": {
-            **quality,
+            **{key: value for key, value in quality.items() if key != "score_report"},
             "model_assessment": model_image_quality,
+            "score_report": quality_report,
         },
         "model_information": {
             **vision_model.get_model_information(),
-            "inference_performed": model_result is not None or model_output_invalid,
-            "model_output_usable": model_result is not None,
+            "inference_performed": inference_performed,
+            "model_output_usable": usable_model and confidence is not None,
         },
         "uncertainty_warnings": warnings,
         "review_status": "PENDING_MEDICAL_OFFICER_REVIEW",

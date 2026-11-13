@@ -1,5 +1,4 @@
 const path = require("path");
-const fs = require("fs");
 require("dotenv").config({ path: path.join(__dirname, ".env"), quiet: true });
 
 const express = require("express");
@@ -107,34 +106,10 @@ app.use("/api", (req, res) => {
   });
 });
 
-// Local production: serve the CRA build from the same origin as /api
-// so REACT_APP_API_URL=/api works without a separate static proxy.
-const frontendBuildPath = path.join(__dirname, "..", "frontend", "build");
-const frontendIndexPath = path.join(frontendBuildPath, "index.html");
-const frontendBuildReady =
-  fs.existsSync(frontendBuildPath) && fs.existsSync(frontendIndexPath);
-
-if (frontendBuildReady) {
-  app.use(express.static(frontendBuildPath, {
-    index: false,
-    // Keep hashed /static assets cacheable; HTML/SW stay revalidated by the browser.
-  }));
-
-  app.use((req, res, next) => {
-    if (req.path.startsWith("/api")) {
-      return res.status(404).json({
-        success: false,
-        message: "API route not found",
-      });
-    }
-    if (req.method !== "GET" && req.method !== "HEAD") {
-      return next();
-    }
-    return res.sendFile(frontendIndexPath, (error) => {
-      if (error) next(error);
-    });
-  });
-}
+// Same-origin CRA hosting (local / Docker / native Render). Mounted AFTER /api
+// so refresh on React routes serves index.html while /api/* stays JSON.
+const { mountFrontendStatic } = require("./utils/frontendStatic");
+mountFrontendStatic(app, express, __dirname);
 
 // Error handler must be last
 app.use(errorHandler);

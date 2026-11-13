@@ -25,20 +25,18 @@ async function startServer() {
         process.exit(1);
       }
 
-      const frontendBuildPath = path.join(__dirname, "..", "frontend", "build");
-      const servingFrontend = require("fs").existsSync(
-        path.join(frontendBuildPath, "index.html")
-      );
+      const { resolveFrontendBuild } = require("./utils/frontendStatic");
+      const frontend = resolveFrontendBuild(__dirname);
       console.log(
         `Aarogya Drishti API listening on ${listenHost}:${config.port}`
       );
-      if (servingFrontend) {
+      if (frontend.ready) {
         console.log(
-          `Serving frontend production build from ${frontendBuildPath}`
+          `Serving frontend production build from ${frontend.buildPath}`
         );
       } else {
         console.log(
-          "Frontend build not found — API only. Run frontend production build to enable same-origin hosting."
+          "Frontend build not found — API only. Build the CRA app and set FRONTEND_BUILD_PATH or place it at ../frontend/build or ./public."
         );
       }
 

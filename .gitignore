@@ -13,6 +13,8 @@ node_modules/
 # Frontend / build artifacts
 frontend/build/
 **/build/
+# CRA sync target for native Render (npm run sync:frontend)
+backend/public/
 dist/
 **/dist/
 coverage/

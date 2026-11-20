@@ -8,6 +8,7 @@ let mockPhotoRows;
 let mockModelRows;
 let mockScreeningRows;
 let mockAttemptByPhoto;
+let mockCategoryByPhoto;
 let changePhotosBeforePersistence;
 let mockPipelinePayload;
 let mockAnalysisStatus;
@@ -32,8 +33,16 @@ const { analyzeScreening } = require("../../services/aiAnalysisService");
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const SCREENING_ID = "22222222-2222-4222-8222-222222222222";
 const PATIENT_ID = "33333333-3333-4333-8333-333333333333";
-const MODEL_VERSION = "gemma4:31b-cloud";
+const MODEL_VERSION = "@cf/meta/llama-3.2-11b-vision-instruct";
 const VIEWS = ["FRONT_VIEW", "LEFT_VIEW", "RIGHT_VIEW"];
+const TONGUE_FEATURES = [
+  "WHITE_COATING",
+  "REDNESS",
+  "VISIBLE_SORES",
+  "SURFACE_CHANGES",
+  "SWELLING",
+  "OTHER_VISIBLE_ABNORMALITIES",
+];
 
 function makePhotos() {
   return VIEWS.map((view) => ({
@@ -63,6 +72,7 @@ function makeView(view, extras = {}) {
       { feature: "WHITE_OR_RED_PATCHES", scale: "0", note: null },
       { feature: "VISIBLE_ULCERS", scale: "0", note: null },
       { feature: "GUM_APPEARANCE_CHANGES", scale: "0", note: null },
+      { feature: "OTHER_VISIBLE_ABNORMALITIES", scale: "0", note: null },
     ],
     visual_health_assessment_score: 87,
     visual_health_assessment_score_message:
@@ -78,7 +88,23 @@ function makeView(view, extras = {}) {
     not_assessable_reason: null,
     recommendation: "A Medical Officer must review the original image and clinical findings before making any decision.",
     image_quality: { status: "ACCEPTABLE", warnings: [], metrics: { width: 1200, height: 900 } },
-    model_information: { provider: "ollama-cloud", model_version: MODEL_VERSION, inference_performed: true },
+    analysis_status: "COMPLETED",
+    analyzed_at: "2026-11-19T10:00:00.000Z",
+    error_code: null,
+    model_information: {
+      provider: "cloudflare-workers-ai",
+      model_version: MODEL_VERSION,
+      trained_oral_model: false,
+      validation_status: "NOT_VALIDATED",
+      provider_request_started: true,
+      provider_request_success: true,
+      provider_response_received: true,
+      provider_http_status: 200,
+      provider_response_validated: true,
+      inference_performed: true,
+      model_output_usable: true,
+      error_code: null,
+    },
     uncertainty_warnings: ["CLINICIAN_REVIEW_REQUIRED"],
     review_status: "PENDING_MEDICAL_OFFICER_REVIEW",
     ...extras,
@@ -90,7 +116,11 @@ function makeAnalysisPayload() {
     status: "success",
     analysis: {
       screening_reference: SCREENING_ID,
-      model_information: { provider: "ollama-cloud", model_version: MODEL_VERSION },
+      model_information: {
+        provider: "cloudflare-workers-ai",
+        model_version: MODEL_VERSION,
+        validation_status: "NOT_VALIDATED",
+      },
       views: VIEWS.map(makeView),
       review_status: "PENDING_MEDICAL_OFFICER_REVIEW",
       disclaimer: "Preliminary screening support only; not a diagnosis.",
@@ -104,7 +134,7 @@ function mockPipeline() {
       return new Response(JSON.stringify({
         status: "healthy",
         model_information: {
-          provider: "ollama-cloud",
+          provider: "cloudflare-workers-ai",
           model_version: MODEL_VERSION,
           model_type: "cloud_vision",
           trained_oral_model: false,
@@ -127,13 +157,14 @@ beforeEach(() => {
   mockPhotoRows = makePhotos();
   mockScreeningRows = [{ id: SCREENING_ID, patient_id: PATIENT_ID, case_state: "SCREENED" }];
   mockAttemptByPhoto = {};
+  mockCategoryByPhoto = {};
   changePhotosBeforePersistence = false;
   mockPipelinePayload = makeAnalysisPayload();
   mockAnalysisStatus = 200;
   mockMalformedAnalysisJson = false;
   mockModelRows = [{
     id: 3,
-    provider: "ollama-cloud",
+    provider: "cloudflare-workers-ai",
     model_version: MODEL_VERSION,
     is_active: true,
     is_research_only: true,
@@ -148,7 +179,7 @@ beforeEach(() => {
       return {
         rows: mockPhotoRows.map((photo) => ({
           photo_id: photo.id,
-          image_category: "MOUTH",
+          image_category: mockCategoryByPhoto[photo.id] || "MOUTH",
         })),
       };
     }
@@ -184,8 +215,8 @@ beforeEach(() => {
         rows: [{
           id: `assessment-${inserted}`,
           photo_id: values[1],
-          status: "COMPLETED",
-          result_label: values[4],
+          status: values[4],
+          result_label: values[5],
         }],
       };
     }
@@ -200,7 +231,7 @@ afterEach(() => {
   delete global.fetch;
 });
 
-test("analyzes and stores exactly the three owned, consented original views", async () => {
+test("analyzes and stores each owned, consented original view independently", async () => {
   const result = await analyzeScreening(USER_ID, { user: { id: USER_ID } }, SCREENING_ID);
 
   expect(result.views.map((view) => view.view)).toEqual(VIEWS);
@@ -221,6 +252,8 @@ test("analyzes and stores exactly the three owned, consented original views", as
   expect(analysisRequest.body.get("screening_reference")).toBe(SCREENING_ID);
   expect(VIEWS.map((view) => analysisRequest.body.get(view.toLowerCase().replace("_view", "")).name))
     .toEqual(["front_view.jpg", "left_view.jpg", "right_view.jpg"]);
+  expect(VIEWS.map((view) => analysisRequest.body.get(`${view.toLowerCase().replace("_view", "")}_category`)))
+    .toEqual(["MOUTH", "MOUTH", "MOUTH"]);
   const uploadedPhotoContents = await Promise.all(
     VIEWS.map(async (view) => {
       const field = view.toLowerCase().replace("_view", "");
@@ -245,14 +278,36 @@ test("analyzes and stores exactly the three owned, consented original views", as
 
   const savedAssessments = mockClient.query.mock.calls
     .filter(([sql]) => sql.includes("INSERT INTO tbl_ai_assessments"))
-    .map(([, values]) => ({ photoId: values[1], resultLabel: values[4], details: JSON.parse(values[7]) }));
+    .map(([, values]) => ({
+      photoId: values[1],
+      status: values[4],
+      resultLabel: values[5],
+      details: JSON.parse(values[7]),
+    }));
   expect(savedAssessments.map((entry) => entry.photoId)).toEqual(VIEWS.map((view) => `photo-${view}`));
   expect(savedAssessments.map((entry) => entry.details.view)).toEqual(VIEWS);
+  expect(savedAssessments.map((entry) => entry.status)).toEqual(Array(3).fill("COMPLETED"));
   expect(savedAssessments.map((entry) => entry.resultLabel)).toEqual(Array(3).fill("SUSPICIOUS_FOR_CLINICAL_REVIEW"));
   savedAssessments.forEach(({ details }) => {
-    expect(details.confidence_meaning).toContain("not a disease probability");
     expect(details.review_status).toBe("PENDING_MEDICAL_OFFICER_REVIEW");
+    for (const field of [
+      "confidence",
+      "confidence_meaning",
+      "criterion_scores",
+      "image_quality_score",
+      "model_confidence",
+      "observation_confidence",
+      "overall_clinical_score",
+      "raw_model_confidence",
+      "score",
+      "visual_health_assessment_score",
+    ]) {
+      expect(details).not.toHaveProperty(field);
+    }
+    expect(details.image_quality).not.toHaveProperty("score_report");
+    expect(details.image_quality).not.toHaveProperty("metrics");
   });
+  expect(assessmentInserts.every(([sql]) => /, NULL, \$8::jsonb/.test(sql))).toBe(true);
   const initialOwnershipQuery = mockPool.query.mock.calls.find(([sql]) => sql.includes("FROM tbl_screenings"))[0];
   expect(initialOwnershipQuery).toContain("s.examiner_id = $2");
   expect(initialOwnershipQuery).toContain("fn_user_has_patient_access");
@@ -310,7 +365,7 @@ test("matches the exact provider and model version with the required registry fl
   const registryQuery = mockPool.query.mock.calls.find(([sql]) => sql.includes("FROM mst_ai_models"));
   expect(registryQuery[0]).toMatch(/provider = \$1 AND model_version = \$2/);
   expect(registryQuery[0]).toMatch(/is_active = TRUE AND is_research_only = TRUE AND clinical_use = FALSE/);
-  expect(registryQuery[1]).toEqual(["ollama-cloud", "gemma4:31b-cloud"]);
+  expect(registryQuery[1]).toEqual(["cloudflare-workers-ai", MODEL_VERSION]);
   expect(mockClient.query.mock.calls.filter(([sql]) => sql.includes("INSERT INTO tbl_ai_assessments"))).toHaveLength(3);
 });
 
@@ -332,7 +387,7 @@ test("does not match a different registry model version", async () => {
   await expect(analyzeScreening(USER_ID, { user: { id: USER_ID } }, SCREENING_ID))
     .rejects.toMatchObject({ code: "AI_MODEL_UNAVAILABLE" });
   const registryQuery = mockPool.query.mock.calls.find(([sql]) => sql.includes("FROM mst_ai_models"));
-  expect(registryQuery[1]).toEqual(["ollama-cloud", "gemma4:31b-cloud"]);
+  expect(registryQuery[1]).toEqual(["cloudflare-workers-ai", MODEL_VERSION]);
   expect(mockClient.query).not.toHaveBeenCalled();
 });
 
@@ -347,28 +402,37 @@ const invalidAnalysisCases = [
   ["duplicate view", (payload) => {
     payload.analysis.views = [makeView("FRONT_VIEW"), makeView("FRONT_VIEW"), makeView("RIGHT_VIEW")];
   }],
-  ["missing confidence", (payload) => { delete payload.analysis.views[0].model_confidence; }],
-  ["decimal confidence", (payload) => { payload.analysis.views[0].model_confidence = 0.5; }],
-  ["string confidence", (payload) => { payload.analysis.views[0].model_confidence = "50"; }],
-  ["percentage confidence", (payload) => { payload.analysis.views[0].model_confidence = "50%"; }],
-  ["confidence below zero", (payload) => { payload.analysis.views[0].model_confidence = -1; }],
-  ["confidence above one hundred", (payload) => { payload.analysis.views[0].model_confidence = 101; }],
   ["invalid model status", (payload) => { payload.analysis.views[0].model_status = "DIAGNOSED"; }],
+  ["failed analysis marked as assessed", (payload) => {
+    payload.analysis.views[0].analysis_status = "FAILED";
+    payload.analysis.views[0].model_status = "OK";
+  }],
+  ["missing analysis status", (payload) => { delete payload.analysis.views[0].analysis_status; }],
+  ["not-inferred image marked as assessed", (payload) => {
+    payload.analysis.views[0].model_information.inference_performed = false;
+  }],
+  ["missing usable-output metadata", (payload) => {
+    delete payload.analysis.views[0].model_information.model_output_usable;
+  }],
+  ["unvalidated provider response", (payload) => {
+    payload.analysis.views[0].model_information.provider_response_validated = false;
+  }],
+  ["failed result with findings", (payload) => {
+    const result = payload.analysis.views[0];
+    result.analysis_status = "FAILED";
+    result.model_status = "ANALYSIS_FAILED";
+    result.error_code = "PROVIDER_REQUEST_FAILED";
+    result.model_information.error_code = "PROVIDER_REQUEST_FAILED";
+  }],
+  ["missing provider metadata", (payload) => {
+    delete payload.analysis.views[0].model_information.provider;
+  }],
   ["invalid finding scale", (payload) => {
     payload.analysis.views[0].possible_visual_findings = [
       { feature: "VISIBLE_REDNESS", scale: "severe", note: null },
     ];
   }],
   ["invalid selected category", (payload) => { payload.analysis.views[0].selected_category = "EYE"; }],
-  ["visual health score above one hundred", (payload) => {
-    payload.analysis.views[0].visual_health_assessment_score = 101;
-  }],
-  ["visual health score decimal", (payload) => {
-    payload.analysis.views[0].visual_health_assessment_score = 87.5;
-  }],
-  ["visual health score string", (payload) => {
-    payload.analysis.views[0].visual_health_assessment_score = "87";
-  }],
 ];
 
 test("accepts structured findings and NOT_ASSESSABLE views", async () => {
@@ -378,6 +442,13 @@ test("accepts structured findings and NOT_ASSESSABLE views", async () => {
     makeView("LEFT_VIEW", {
       classification: "UNCERTAIN",
       model_status: "NOT_ASSESSABLE",
+      analysis_status: "FAILED",
+      error_code: "MODEL_NOT_ASSESSABLE",
+      model_information: {
+        ...makeView("LEFT_VIEW").model_information,
+        model_output_usable: false,
+        error_code: "MODEL_NOT_ASSESSABLE",
+      },
       model_confidence: null,
       observation_confidence: null,
       possible_visual_findings: [],
@@ -386,7 +457,7 @@ test("accepts structured findings and NOT_ASSESSABLE views", async () => {
         "Score Not Available – insufficient usable visual findings.",
       visual_health_assessment_score_reasons: [],
       not_assessable_reason: "Image too dark",
-      observations: ["Image too dark"],
+      observations: [],
       abnormalities: [],
       uncertainty_warnings: ["MODEL_RESULT_UNCERTAIN", "CLINICIAN_REVIEW_REQUIRED"],
     }),
@@ -399,6 +470,7 @@ test("accepts structured findings and NOT_ASSESSABLE views", async () => {
         { feature: "WHITE_OR_RED_PATCHES", scale: "0", note: null },
         { feature: "VISIBLE_ULCERS", scale: "0", note: null },
         { feature: "GUM_APPEARANCE_CHANGES", scale: "0", note: null },
+        { feature: "OTHER_VISIBLE_ABNORMALITIES", scale: "0", note: null },
       ],
       visual_health_assessment_score: 100,
       visual_health_assessment_score_reasons: [],
@@ -409,13 +481,13 @@ test("accepts structured findings and NOT_ASSESSABLE views", async () => {
 
   const result = await analyzeScreening(USER_ID, { user: { id: USER_ID } }, SCREENING_ID);
   expect(result.views.map((view) => view.model_status)).toEqual(["OK", "NOT_ASSESSABLE", "OK"]);
-  expect(result.views[0].possible_visual_findings).toHaveLength(5);
+  expect(result.views[0].possible_visual_findings).toHaveLength(6);
   expect(result.assessments).toHaveLength(3);
 
   const assessmentInserts = mockClient.query.mock.calls
     .filter(([sql]) => sql.includes("INSERT INTO tbl_ai_assessments"));
   // score column = visual_health_assessment_score / 100 (not model confidence)
-  expect(assessmentInserts.map(([, values]) => values[6])).toEqual([0.87, null, 1]);
+  expect(assessmentInserts.every(([sql]) => /, NULL, \$8::jsonb/.test(sql))).toBe(true);
 });
 
 test.each(invalidAnalysisCases)("rejects an AI response with %s", async (_label, invalidate) => {
@@ -439,7 +511,7 @@ test.each([
       return new Response(JSON.stringify({
         status: "healthy",
         model_information: {
-          provider: "ollama-cloud",
+          provider: "cloudflare-workers-ai",
           model_version: MODEL_VERSION,
           model_type: "cloud_vision",
           trained_oral_model: false,
@@ -466,12 +538,84 @@ test("does not contact the AI service without current photo consent", async () =
   expect(mockClient.query).not.toHaveBeenCalled();
 });
 
-test("requires all three active views before analysis", async () => {
-  mockPhotoRows = mockPhotoRows.filter((photo) => photo.view !== "RIGHT_VIEW");
+test("one uploaded view is enough and missing views are not requested or fabricated", async () => {
+  mockPhotoRows = mockPhotoRows.filter((photo) => photo.view === "FRONT_VIEW");
+  mockPipelinePayload = makeAnalysisPayload();
+  mockPipelinePayload.analysis.views = mockPipelinePayload.analysis.views.filter((result) => result.view === "FRONT_VIEW");
 
-  await expect(analyzeScreening(USER_ID, { user: { id: USER_ID } }, SCREENING_ID))
-    .rejects.toMatchObject({ code: "PHOTOS_REQUIRED" });
-  expect(global.fetch).not.toHaveBeenCalled();
+  const result = await analyzeScreening(USER_ID, { user: { id: USER_ID } }, SCREENING_ID);
+  const form = global.fetch.mock.calls[1][1].body;
+  expect(result.views.map((view) => view.view)).toEqual(["FRONT_VIEW"]);
+  expect(result.views[0].photo_id).toBe("photo-FRONT_VIEW");
+  expect(form.get("front")).not.toBeNull();
+  expect(form.get("left")).toBeNull();
+  expect(form.get("right")).toBeNull();
+});
+
+test("two uploaded views are analyzed with their own categories and byte payloads", async () => {
+  mockPhotoRows = mockPhotoRows.filter((photo) => photo.view !== "RIGHT_VIEW");
+  mockCategoryByPhoto = {
+    "photo-FRONT_VIEW": "MOUTH",
+    "photo-LEFT_VIEW": "TONGUE",
+  };
+  mockPipelinePayload = makeAnalysisPayload();
+  mockPipelinePayload.analysis.views = mockPipelinePayload.analysis.views.filter((result) => result.view !== "RIGHT_VIEW");
+  mockPipelinePayload.analysis.views[1].selected_category = "TONGUE";
+  mockPipelinePayload.analysis.views[1].possible_visual_findings = TONGUE_FEATURES.map((feature) => ({
+    feature,
+    scale: "0",
+    note: null,
+  }));
+  mockPipelinePayload.analysis.views[1].classification = "NORMAL";
+  mockPipelinePayload.analysis.views[1].observations = TONGUE_FEATURES.map((feature) => `${feature}: Not observed`);
+
+  const result = await analyzeScreening(USER_ID, { user: { id: USER_ID } }, SCREENING_ID);
+  const form = global.fetch.mock.calls[1][1].body;
+  expect(result.views.map((view) => view.photo_id)).toEqual(["photo-FRONT_VIEW", "photo-LEFT_VIEW"]);
+  expect(Buffer.from(await form.get("front").arrayBuffer()).toString("utf8"))
+    .toBe("synthetic-original:front_view.jpg");
+  expect(Buffer.from(await form.get("left").arrayBuffer()).toString("utf8"))
+    .toBe("synthetic-original:left_view.jpg");
+  expect(form.get("front_category")).toBe("MOUTH");
+  expect(form.get("left_category")).toBe("TONGUE");
+  expect(form.get("right")).toBeNull();
+});
+
+test("a failed view is saved without a result label while successful views remain independent", async () => {
+  mockPipelinePayload = makeAnalysisPayload();
+  mockPipelinePayload.analysis.views[1] = makeView("LEFT_VIEW", {
+    analysis_status: "FAILED",
+    model_status: "ANALYSIS_FAILED",
+    error_code: "PROVIDER_REQUEST_FAILED",
+    model_information: {
+      ...makeView("LEFT_VIEW").model_information,
+      provider_request_success: false,
+      provider_response_received: false,
+      provider_http_status: null,
+      provider_response_validated: false,
+      inference_performed: false,
+      model_output_usable: false,
+      error_code: "PROVIDER_REQUEST_FAILED",
+    },
+    classification: "UNCERTAIN",
+    model_confidence: null,
+    observation_confidence: null,
+    possible_visual_findings: [],
+    observations: [],
+    abnormalities: [],
+    not_assessable_reason: "AI analysis could not be completed for this image. Retry the analysis.",
+  });
+
+  const result = await analyzeScreening(USER_ID, { user: { id: USER_ID } }, SCREENING_ID);
+
+  expect(result.views.map((view) => view.analysis_status)).toEqual(["COMPLETED", "FAILED", "COMPLETED"]);
+  const inserts = mockClient.query.mock.calls.filter(([sql]) => sql.includes("INSERT INTO tbl_ai_assessments"));
+  expect(inserts.map(([, values]) => values[4])).toEqual(["COMPLETED", "FAILED", "COMPLETED"]);
+  expect(inserts.map(([, values]) => values[5])).toEqual([
+    "SUSPICIOUS_FOR_CLINICAL_REVIEW",
+    null,
+    "SUSPICIOUS_FOR_CLINICAL_REVIEW",
+  ]);
 });
 
 test("rejects duplicate uploaded photo views before analysis", async () => {
@@ -482,7 +626,7 @@ test("rejects duplicate uploaded photo views before analysis", async () => {
   ];
 
   await expect(analyzeScreening(USER_ID, { user: { id: USER_ID } }, SCREENING_ID))
-    .rejects.toMatchObject({ code: "PHOTOS_REQUIRED" });
+    .rejects.toMatchObject({ code: "INVALID_PHOTO_VIEWS" });
   expect(global.fetch).not.toHaveBeenCalled();
 });
 

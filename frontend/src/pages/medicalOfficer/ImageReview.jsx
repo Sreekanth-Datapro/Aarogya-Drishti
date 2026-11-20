@@ -6,6 +6,11 @@ import { useLanguage } from "../../i18n/LanguageContext";
 import { formatLocalizedDate, formatLocalizedDateTime, formatLocalizedNumber, getCodeLabel } from "../../i18n/displayLabels";
 import { apiMessage } from "../../i18n/translate";
 import { Alert, Badge, Button, EmptyState, Modal, PageLoader } from "../../components/ui";
+import {
+  getAnalysisStatus,
+  getFindingState,
+  getModelDisplayStatus,
+} from "../../components/oralScreeningReportUtils";
 import CasePicker from "./CasePicker";
 import MoCaseSteps from "./MoCaseSteps";
 import "./MedicalOfficer.css";
@@ -303,6 +308,9 @@ export default function ImageReview() {
   const renderImages = (items) => items.map((image) => {
     const quality = qualityStatus(image);
     const details = image.ai_analysis_details;
+    const reviewDetails = { ...details, status: image.ai_status };
+    const analysisStatus = details ? getAnalysisStatus(reviewDetails) : "NOT_ANALYZED";
+    const modelStatus = details ? getModelDisplayStatus(reviewDetails) : null;
     return (
       <article key={image.id} className="mo-card mo-image-card">
         <button type="button" className="mo-image-thumb" onClick={() => openImage(image, items)} disabled={Boolean(opening)}
@@ -339,60 +347,33 @@ export default function ImageReview() {
               {details.selected_category && (
                 <p><strong>{t("mo.aiCategory")}:</strong> {details.selected_category}</p>
               )}
-              {details.model_status && (
-                <p><strong>{t("mo.aiModelStatus")}:</strong> {details.model_status}</p>
+              {modelStatus && (
+                <p><strong>{t("mo.aiModelStatus")}:</strong> {t(`screening.aiModelStatuses.${modelStatus}`)}</p>
               )}
               {details.image_quality?.model_assessment && (
                 <p><strong>{t("mo.imageModelAssessment")}:</strong> {details.image_quality.model_assessment}</p>
               )}
-              {(details.image_quality_score || details.image_quality?.score_report) && (
-                <p>
-                  <strong>{t("mo.imageQualityScore")}:</strong>{" "}
-                  {(details.image_quality_score || details.image_quality.score_report).status === "INSUFFICIENT"
-                    ? ((details.image_quality_score || details.image_quality.score_report).label || t("mo.insufficientImageQuality"))
-                    : `${formatLocalizedNumber((details.image_quality_score || details.image_quality.score_report).score, language)}/100`}
-                </p>
-              )}
-              <p>
-                <strong>{t("mo.visualHealthAssessmentScore")}:</strong>{" "}
-                {details.visual_health_assessment_score == null && image.ai_score == null
-                  ? t("mo.scoreNotAvailable")
-                  : `${formatLocalizedNumber(
-                    details.visual_health_assessment_score != null
-                      ? details.visual_health_assessment_score
-                      : Number(image.ai_score) * 100,
-                    language
-                  )}/100`}
-              </p>
-              <p className="mo-muted">
-                {details.visual_health_assessment_score_message
-                  || t("mo.visualHealthScoreUnavailable")}
-              </p>
-              {Array.isArray(details.visual_health_assessment_score_reasons)
-                && details.visual_health_assessment_score_reasons.length > 0 && (
-                <ul>
-                  {details.visual_health_assessment_score_reasons.map((item) => (
-                    <li key={`${image.id}-score-${item.feature}`}>
-                      {item.reason || `${item.description || item.feature}: ${item.points}/100`}
-                    </li>
-                  ))}
-                </ul>
-              )}
               {details.image_quality?.warnings?.map((warning) => (
                 <p className="mo-warning" key={warning}>{t(`mo.aiQualityWarnings.${warning}`)}</p>
               ))}
-              {Array.isArray(details.possible_visual_findings) && details.possible_visual_findings.length > 0 && (
+              {analysisStatus !== "FAILED"
+                && Array.isArray(details.possible_visual_findings)
+                && details.possible_visual_findings.length > 0 && (
                 <ul>
                   {details.possible_visual_findings.map((finding) => (
                     <li key={`${image.id}-${finding.feature}`}>
-                      {finding.feature}: {finding.scale}
+                      {t(`screening.aiFeatures.${finding.feature}`)}:{" "}
+                      {t(`screening.report.findingStates.${getFindingState({
+                        ...reviewDetails,
+                      }, finding.feature)}`)}
                       {finding.note ? ` — ${finding.note}` : ""}
                     </li>
                   ))}
                 </ul>
               )}
               {details.not_assessable_reason && <p>{details.not_assessable_reason}</p>}
-              {(!details.possible_visual_findings || details.possible_visual_findings.length === 0)
+              {analysisStatus !== "FAILED"
+                && (!details.possible_visual_findings || details.possible_visual_findings.length === 0)
                 && details.observations?.map((observation, index) => (
                   <p key={`observation-${index}`}>{observation}</p>
                 ))}
@@ -402,21 +383,10 @@ export default function ImageReview() {
               {details.recommendation && (
                 <p><strong>{t("mo.aiRecommendation")}:</strong> {details.recommendation}</p>
               )}
-              {(details.observation_confidence != null || details.model_confidence != null) && (
-                <p className="mo-muted">
-                  {t("mo.aiScore")}:{" "}
-                  {formatLocalizedNumber(
-                    details.observation_confidence ?? details.model_confidence,
-                    language
-                  )}/100
-                </p>
-              )}
-              {details.visual_health_assessment_score == null
-                && image.ai_score == null
-                && (details.model_status === "INVALID_OUTPUT" || details.model_status === "NOT_ASSESSABLE") && (
+              {analysisStatus === "FAILED"
+                && (
                 <p className="mo-warning">{t("mo.analysisUnavailable")}</p>
               )}
-              <p className="mo-muted">{t("mo.visualHealthScoreSafety")}</p>
               {image.ai_model_provider && (
                 <p>{t("mo.aiModel")}: {image.ai_model_provider} · {image.ai_model_version}</p>
               )}

@@ -11,6 +11,7 @@ import {
   getSexLabel,
 } from "../../i18n/displayLabels";
 import { Badge } from "../../components/ui";
+import OralScreeningReport from "../../components/OralScreeningReport";
 
 // Read-only panels of a claimed patient's case (data from GET /medical-officer/patients/:id/case)
 export default function CaseSummary({ data }) {
@@ -19,6 +20,27 @@ export default function CaseSummary({ data }) {
   const yesNo = (value) => (value ? t("mo.yes") : t("mo.no"));
   const symptoms = data.findings.filter((finding) => finding.finding_kind === "SYMPTOM");
   const oralFindings = data.findings.filter((finding) => finding.finding_kind !== "SYMPTOM");
+  const assessmentsByPhoto = new Map((data.ai_results || []).map((assessment) => [assessment.photo_id, assessment]));
+  const reportPhotos = (data.photos || []).map((photo) => {
+    const assessment = assessmentsByPhoto.get(photo.id);
+    const details = assessment?.analysis_details || {};
+    const failed = assessment && assessment.status !== "COMPLETED";
+    return {
+      ...details,
+      ...photo,
+      photo_id: photo.id,
+      analysis_status: failed || details.analysis_status === "FAILED"
+        ? "FAILED"
+        : details.analysis_status || (assessment ? "COMPLETED" : "NOT_ANALYZED"),
+      possible_visual_findings: failed ? [] : details.possible_visual_findings,
+      observations: failed ? [] : details.observations,
+      abnormalities: failed ? [] : details.abnormalities,
+      status: assessment?.status || "NOT_ANALYZED",
+      image_quality: details.image_quality || (
+        photo.image_quality_status ? { status: photo.image_quality_status } : null
+      ),
+    };
+  });
 
   return (
     <div className="mo-summary-grid">
@@ -115,73 +137,20 @@ export default function CaseSummary({ data }) {
       <section className="mo-card mo-ai-card">
         <h2 className="mo-card-title"><Bot size={16} /> {t("mo.aiTitle")}</h2>
         <p className="mo-warning">{t("mo.aiWarning")}</p>
-        <ul className="mo-list">
-          {consent.screening && consent.image_capture && data.ai_results.map((ai) => (
-            <li key={ai.id}>
-              <span>
-                <strong>{t(`mo.aiReviewStatuses.${ai.status}`)}</strong>
-                {ai.analysis_details?.view && ` · ${getCodeLabel("photoViews", ai.analysis_details.view, language)}`}
-                {ai.analysis_details?.classification
-                  ? ` · ${t(`mo.aiClassifications.${ai.analysis_details.classification}`)}`
-                  : ai.result_label ? ` · ${getCodeLabel("aiResults", ai.result_label, language)}` : ""}
-              </span>
-              <small>
-                {ai.image_quality_status && `${t("mo.imageQuality")}: ${getCodeLabel("qualityStatuses", ai.image_quality_status, language)} · `}
-                {ai.score != null && `${t("mo.aiScore")}: ${formatLocalizedNumber(Number(ai.score) * 100, language)}/100 · `}
-                {ai.completed_at ? formatLocalizedDateTime(ai.completed_at, language) : ""}
-              </small>
-              {ai.analysis_details && (
-                <div className="mo-ai-result-details">
-                  {ai.analysis_details.selected_category && (
-                    <p><strong>{t("mo.aiCategory")}:</strong> {ai.analysis_details.selected_category}</p>
-                  )}
-                  {ai.analysis_details.model_status && (
-                    <p><strong>{t("mo.aiModelStatus")}:</strong> {ai.analysis_details.model_status}</p>
-                  )}
-                  {Array.isArray(ai.analysis_details.possible_visual_findings)
-                    && ai.analysis_details.possible_visual_findings.length > 0 && (
-                    <ul>
-                      {ai.analysis_details.possible_visual_findings.map((finding) => (
-                        <li key={`${ai.id}-${finding.feature}`}>
-                          {finding.feature}: {finding.scale}
-                          {finding.note ? ` — ${finding.note}` : ""}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  {ai.analysis_details.not_assessable_reason && (
-                    <p>{ai.analysis_details.not_assessable_reason}</p>
-                  )}
-                  {(!ai.analysis_details.possible_visual_findings
-                    || ai.analysis_details.possible_visual_findings.length === 0)
-                    && ai.analysis_details.observations?.length > 0 && (
-                    <p><strong>{t("mo.aiObservations")}:</strong> {ai.analysis_details.observations.join(" · ")}</p>
-                  )}
-                  {ai.analysis_details.uncertainty_warnings?.map((warning) => (
-                    <p className="mo-warning" key={warning}>{t(`mo.aiWarnings.${warning}`)}</p>
-                  ))}
-                  {ai.analysis_details.recommendation && (
-                    <p><strong>{t("mo.aiRecommendation")}:</strong> {ai.analysis_details.recommendation}</p>
-                  )}
-                  {ai.model_provider && (
-                    <small>{t("mo.aiModel")}: {ai.model_provider} · {ai.model_version}</small>
-                  )}
-                  {ai.analysis_details.screening_reference && (
-                    <small>{t("mo.aiScreeningReference")}: {ai.analysis_details.screening_reference}</small>
-                  )}
-                  <small>{t("mo.clinicalReviewStatus")}: {t("mo.aiPendingReview")}</small>
-                  <p className="mo-muted">{t("mo.aiOriginalEvidenceNote")}</p>
-                </div>
-              )}
-            </li>
-          ))}
-          {(!screening || !consent.screening || !consent.image_capture) && (
-            <li className="mo-empty">{t("mo.aiReviewUnavailable")}</li>
-          )}
-          {screening && consent.screening && consent.image_capture && !data.ai_results.length && (
-            <li className="mo-empty">{t("mo.aiReviewNotPerformed")}</li>
-          )}
-        </ul>
+        {consent.screening && consent.image_capture && reportPhotos.length > 0 && (
+          <OralScreeningReport
+            photos={reportPhotos}
+            screeningDate={screening?.screening_date}
+            imagePathPrefix={`/medical-officer/patients/${patient.id}/images`}
+            reviewComplete={Boolean(data.review?.signed_at)}
+          />
+        )}
+        {consent.screening && consent.image_capture && !reportPhotos.length && (
+          <p className="mo-empty">{t("mo.aiReviewNotPerformed")}</p>
+        )}
+        {!screening || !consent.screening || !consent.image_capture ? (
+          <p className="mo-empty">{t("mo.aiReviewUnavailable")}</p>
+        ) : null}
       </section>
 
       <section className="mo-card mo-span-2">

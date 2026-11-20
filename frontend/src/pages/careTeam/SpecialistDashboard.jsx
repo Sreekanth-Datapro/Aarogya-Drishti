@@ -917,11 +917,6 @@ export default function SpecialistDashboard() {
                     <div><dt>{t("specialist.aiFinding")}</dt><dd>{details.classification
                       ? translatedCode("aiClassifications", details.classification, t)
                       : translatedCode("aiResults", observation.result_label, t)}</dd></div>
-                    <div><dt>{t("specialist.modelConfidence")}</dt><dd>{details.model_confidence != null
-                      ? `${details.model_confidence}/100`
-                      : observation.score == null
-                        ? t("specialist.notRecorded")
-                        : `${Math.round(Number(observation.score) * 100)}/100`}</dd></div>
                     <div><dt>{t("specialist.imageQuality")}</dt><dd>{translatedCode("qualityStatuses", observation.image_quality_status, t)}</dd></div>
                     <div><dt>{t("specialist.aiUse")}</dt><dd>{observation.is_research_only && !observation.clinical_use
                       ? `${t("specialist.aiResearchOnly")}${observation.permitted_use ? ` · ${observation.permitted_use}` : ""}`

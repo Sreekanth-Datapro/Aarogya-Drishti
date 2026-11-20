@@ -2,6 +2,7 @@
   "short_name": "Aarogya",
   "name": "Aarogya Drishti",
   "description": "Oral cancer screening, doctor review and care navigation for rural health teams.",
+  "lang": "en",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

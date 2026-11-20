@@ -227,3 +227,11 @@ test("recent patients show their screening consent", async () => {
   expect(within(row).getByText("Given")).toBeInTheDocument();
   expect(within(row).getByText("AD-00009")).toBeInTheDocument();
 });
+
+test("voice assist is available on registration and does not replace typing submit", async () => {
+  renderRegistration();
+  expect(await screen.findByRole("region", { name: "Voice assist" })).toBeInTheDocument();
+  expect(screen.getByText(/Privacy notice/i)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Register patient" })).toBeInTheDocument();
+  expect(screen.getByLabelText("Recognized text (editable)")).toBeInTheDocument();
+});

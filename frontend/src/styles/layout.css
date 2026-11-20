@@ -609,6 +609,22 @@
   }
 }
 
+@media (max-width: 767px) {
+  .auth-form .form-row,
+  .auth-form .form-grid,
+  .auth-card .grid.grid-2 {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-3);
+  }
+
+  .auth-card {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+}
+
 @media (max-width: 560px) {
   .auth-topbar {
     padding: var(--space-4);
@@ -626,7 +642,8 @@
     padding: var(--space-6) var(--space-5);
   }
 
-  .topbar {
+  .topbar,
+  .admin-topbar {
     gap: var(--space-2);
   }
 

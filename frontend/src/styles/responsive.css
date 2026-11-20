@@ -1,6 +1,10 @@
 /*
   Responsive hardening for Aarogya Drishti.
   Builds on existing layout/Sidebar/Topbar rules without replacing them.
+
+  Breakpoints (content):
+    mobile  ≤767px   | tablet 768–1199px | desktop ≥1200px
+  Shell drawer stays at ≤900px (Sidebar/Topbar) — do not regress mid-tablet UX.
 */
 
 :root {
@@ -25,6 +29,69 @@ body {
   padding-left: var(--safe-left);
 }
 
+/* ── Reusable content grids (prefer these over one-off page grids) ── */
+.resp-stat-grid,
+.resp-content-grid,
+.resp-form-grid {
+  display: grid;
+  gap: var(--space-4);
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.resp-stat-grid > *,
+.resp-content-grid > *,
+.resp-form-grid > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Stats: 1 → 2 (tablet) → 4 (desktop) */
+.resp-stat-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 768px) {
+  .resp-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1200px) {
+  .resp-stat-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+/* Content: 1 → 2 → 3 */
+.resp-content-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 768px) {
+  .resp-content-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1200px) {
+  .resp-content-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* Forms: 1 → 2 */
+.resp-form-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 768px) {
+  .resp-form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 /* Keep wide tables inside the page instead of growing the document */
 .table-scroll,
 .role-table-scroll,
@@ -42,6 +109,61 @@ body {
 .admin-table,
 .role-permission-matrix {
   min-width: 0;
+}
+
+/* Map common role stat wrappers onto the shared responsive pattern */
+.hw-stat-grid,
+.mo-stat-grid,
+.district-stat-grid,
+.staff-stat-grid,
+.diagnostics-stat-grid,
+.role-stats-grid,
+.summary-tiles,
+.stats-grid {
+  display: grid;
+  gap: var(--space-4);
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.hw-stat-grid > *,
+.mo-stat-grid > *,
+.district-stat-grid > *,
+.staff-stat-grid > *,
+.diagnostics-stat-grid > *,
+.role-stats-grid > *,
+.summary-tiles > *,
+.stats-grid > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+@media (min-width: 768px) {
+  .hw-stat-grid,
+  .mo-stat-grid,
+  .district-stat-grid,
+  .staff-stat-grid,
+  .diagnostics-stat-grid,
+  .role-stats-grid,
+  .summary-tiles,
+  .stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1200px) {
+  .hw-stat-grid,
+  .mo-stat-grid,
+  .district-stat-grid,
+  .staff-stat-grid,
+  .diagnostics-stat-grid,
+  .role-stats-grid,
+  .summary-tiles,
+  .stats-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
 
 /* Touch-friendly controls */
@@ -144,6 +266,29 @@ canvas {
   }
 }
 
+/* Content mobile: forms stack below 768px (token --bp-mobile) */
+@media (max-width: 767px) {
+  .resp-form-grid,
+  .form-row,
+  .form-grid,
+  .filters-row,
+  .grid.grid-2,
+  .grid.grid-3,
+  .grid.grid-4 {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-3);
+  }
+
+  .page-header,
+  .role-management-header,
+  .district-admin-overview-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-3);
+  }
+}
+
 /* Phones */
 @media (max-width: 560px) {
   .page {
@@ -194,20 +339,36 @@ canvas {
     padding-right: var(--space-4);
   }
 
-  /* Prefer stacked form rows on very small screens */
-  .form-row,
-  .form-grid,
-  .filters-row,
-  .grid.grid-2 {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: var(--space-3);
-  }
-
-  .topbar {
+  .topbar,
+  .admin-topbar {
     min-height: calc(var(--topbar-height) - 8px);
     padding-left: var(--space-3);
     padding-right: var(--space-3);
+  }
+
+  /* Hide non-essential topbar chrome; keep menu + voice + language + notifications */
+  .admin-topbar .datetime-pill {
+    display: none;
+  }
+
+  .admin-topbar .pill-text,
+  .admin-topbar .chevron-icon {
+    display: none;
+  }
+
+  .admin-topbar .brand-subtitle {
+    display: none;
+  }
+
+  .admin-topbar .topbar-titles {
+    min-width: 0;
+    max-width: 38vw;
+  }
+
+  .admin-topbar .brand-heading {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 
@@ -299,4 +460,178 @@ body:has(.pwa-update-banner) {
 
 .pwa-install-card .text-muted {
   margin-bottom: var(--space-3);
+}
+
+/* Installed/mobile app shell: the desktop sidebar remains the wide-screen nav. */
+.mobile-bottom-nav {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .app-shell,
+  .app-main {
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+
+  .mobile-bottom-nav {
+    position: fixed;
+    z-index: 20;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    display: grid;
+    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-flow: column;
+    gap: 2px;
+    padding-top: 6px;
+    padding-right: max(8px, var(--safe-right));
+    padding-bottom: calc(6px + var(--safe-bottom));
+    padding-left: max(8px, var(--safe-left));
+    border-top: 1px solid var(--gray-200);
+    background: rgba(255, 255, 255, 0.97);
+    box-shadow: 0 -4px 16px rgba(15, 23, 42, 0.08);
+    backdrop-filter: blur(12px);
+  }
+
+  .mobile-bottom-nav-item {
+    display: flex;
+    min-width: 0;
+    min-height: 48px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 3px 2px;
+    border-radius: var(--radius-md);
+    color: var(--gray-600);
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.2;
+    text-align: center;
+    text-decoration: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .mobile-bottom-nav-item span {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-bottom-nav-item.active {
+    background: var(--brand-50);
+    color: var(--brand-700);
+  }
+
+  .page {
+    padding-bottom: calc(var(--space-4) + 70px + var(--safe-bottom));
+  }
+
+  .dashboard-kpi-grid,
+  .bottom-cards-row,
+  .district-admin-overview-grid,
+  .hw-stat-grid,
+  .mo-stat-grid,
+  .district-stat-grid,
+  .staff-stat-grid,
+  .diagnostics-stat-grid,
+  .role-stats-grid,
+  .summary-tiles,
+  .stats-grid,
+  .resp-stat-grid,
+  .tracking-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3);
+  }
+
+  .page > *,
+  .admin-dashboard-container > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .card,
+  .stat-card,
+  .metric-card,
+  .kpi-card,
+  .bottom-card,
+  .admin-panel,
+  .scr-card,
+  .my-appointment-card,
+  .tracking-patient-card {
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-xs);
+  }
+
+  .kpi-card {
+    min-height: 84px;
+    padding: 12px;
+  }
+
+  .kpi-card-header {
+    gap: 8px;
+  }
+
+  .kpi-icon-wrap {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+  }
+
+  .kpi-value {
+    font-size: clamp(18px, 5vw, 22px);
+  }
+
+  .bottom-card {
+    min-width: 0;
+    padding: 12px;
+  }
+
+  .admin-panel-header {
+    gap: var(--space-2);
+  }
+
+  .scr-steps {
+    scroll-snap-type: x mandatory;
+  }
+
+  .scr-steps li {
+    scroll-snap-align: start;
+  }
+
+  .page {
+    animation-duration: 180ms;
+  }
+}
+
+@media (max-width: 359px) {
+  .mobile-bottom-nav-item {
+    font-size: 9px;
+  }
+
+  .dashboard-kpi-grid,
+  .district-admin-overview-grid,
+  .hw-stat-grid,
+  .mo-stat-grid,
+  .district-stat-grid,
+  .staff-stat-grid,
+  .diagnostics-stat-grid,
+  .role-stats-grid,
+  .summary-tiles,
+  .stats-grid,
+  .resp-stat-grid,
+  .tracking-stats {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-bottom-nav-item,
+  .page {
+    animation-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -50,9 +50,24 @@
 
 .filter-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(140px, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   align-items: end;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+@media (min-width: 768px) {
+  .filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1200px) {
+  .filter-grid {
+    grid-template-columns: repeat(4, minmax(140px, 1fr));
+  }
 }
 
 .filter-grid label,
@@ -79,12 +94,32 @@
 
 .admin-card-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .admin-card-grid.three {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 768px) {
+  .admin-card-grid,
+  .admin-card-grid.three {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1200px) {
+  .admin-card-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .admin-card-grid.three {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 .metric-card {
@@ -237,27 +272,15 @@
   border-radius: 8px;
 }
 
-@media (max-width: 1100px) {
-  .filter-grid {
-    grid-template-columns: repeat(2, minmax(140px, 1fr));
-  }
-
+@media (max-width: 1199px) {
   .audit-toolbar {
-    grid-template-columns: repeat(3, minmax(120px, 1fr));
-  }
-
-  .admin-card-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
-@media (max-width: 640px) {
-
-  .filter-grid,
-  .audit-toolbar,
-  .admin-card-grid,
-  .admin-card-grid.three {
-    grid-template-columns: 1fr;
+@media (max-width: 767px) {
+  .audit-toolbar {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .detail-grid {
@@ -290,13 +313,13 @@
   min-height: 1rem;
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 1199px) {
   .role-management-page .grid.grid-2 {
     grid-template-columns: 1fr;
   }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 767px) {
   .role-management-page .table-actions {
     flex-direction: column;
     align-items: stretch;
@@ -339,6 +362,25 @@
 /* ---- filter-grid 1-col on very small phones ---- */
 @media (max-width: 400px) {
   .filter-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 767px) {
+  .admin-card-grid,
+  .admin-card-grid.three {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .metric-card {
+    min-height: 88px;
+    padding: 12px;
+  }
+}
+
+@media (max-width: 359px) {
+  .admin-card-grid,
+  .admin-card-grid.three {
     grid-template-columns: 1fr;
   }
 }

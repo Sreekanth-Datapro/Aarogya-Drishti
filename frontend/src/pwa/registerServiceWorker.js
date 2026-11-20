@@ -27,8 +27,10 @@ export function rememberInstallDismissed() {
 }
 
 export function isStandaloneDisplay() {
+  const displayMode = typeof window.matchMedia === "function"
+    && window.matchMedia("(display-mode: standalone)").matches;
   return (
-    window.matchMedia("(display-mode: standalone)").matches ||
+    displayMode ||
     window.navigator.standalone === true
   );
 }

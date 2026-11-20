@@ -45,9 +45,8 @@
   max-width: 720px;
 }
 
+/* Columns from responsive.css (.role-stats-grid → 1/2/4) */
 .role-stats-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-3);
 }
 

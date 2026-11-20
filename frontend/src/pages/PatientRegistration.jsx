@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { Link } from "react-router-dom";
 import { ClipboardPlus, FileCheck2, MapPin, ShieldCheck, UserRound, Users } from "lucide-react";
 import api from "../services/api";
@@ -20,6 +21,13 @@ import {
 } from "../offline/drafts";
 import { DRAFT_STATUS } from "../offline/constants";
 import { Alert, Badge, Button, Card, PageLoader, SelectField, StatCard, TextField } from "../components/ui";
+import {
+  buildRegistrationQuestions,
+  parseRegistrationAnswer,
+  registrationAnswersToFormPatch,
+} from "../voice/receptionistScripts";
+import useRegisterVoiceWorkflow from "../voice/global/useRegisterVoiceWorkflow";
+import { useGlobalVoiceOptional } from "../voice/global/GlobalVoiceContext";
 import "./PatientRegistration.css";
 
 const CONSENT_METHODS = ["CHECKBOX", "VERBAL_WITNESSED", "SIGNATURE", "THUMBPRINT"];
@@ -42,21 +50,21 @@ function newFormId() {
 
 function emptyForm(languageId = "") {
   return {
-    full_name: "",
-    sex: "",
-    age_years: "",
-    date_of_birth: "",
+  full_name: "",
+  sex: "",
+  age_years: "",
+  date_of_birth: "",
     preferred_language_id: languageId,
     mandal_id: "",
     village_id: "",
     facility_id: "",
-    habitation: "",
+  habitation: "",
     address_line: "",
     consents: { DATA_PROCESSING: false, SCREENING: null, IMAGE_CAPTURE: null },
     consent_method: "CHECKBOX",
     witness_name: "",
     form_id: newFormId(),
-  };
+};
 }
 
 export default function PatientRegistration() {
@@ -82,6 +90,7 @@ export default function PatientRegistration() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [potentialMatches, setPotentialMatches] = useState([]);
+  const [voiceFilledFields, setVoiceFilledFields] = useState(() => new Set());
 
   const applyOptions = useCallback((options) => {
     const assignedMandals = options?.mandals || [];
@@ -137,7 +146,7 @@ export default function PatientRegistration() {
       if (requestError?.code === "OFFLINE_MODE_NO_API" || requestError?.message === "OFFLINE_PIN_REQUIRED") {
         setError("offline.pinRequiredForDrafts");
       } else {
-        setError(apiMessage(requestError, "patientRegistration.loadFailed"));
+      setError(apiMessage(requestError, "patientRegistration.loadFailed"));
       }
     } finally {
       setLoading(false);
@@ -183,24 +192,203 @@ export default function PatientRegistration() {
   };
   const answer = (code, value) => setForm((current) => ({ ...current, consents: { ...current.consents, [code]: value } }));
   const needsWitness = WITNESS_METHODS.includes(form.consent_method);
+  const voiceFieldClass = (field) => voiceFilledFields.has(field) ? "voice-filled" : undefined;
+  const voiceFieldHint = (field) => voiceFilledFields.has(field) ? t("voice.filledHint") : undefined;
+  const applyVoiceUpdates = useCallback((updates, filledFields) => {
+    setPotentialMatches([]);
+    setVoiceFilledFields(new Set(filledFields));
+    setForm((current) => {
+      const next = { ...current, ...updates };
+      if (updates.mandal_id && updates.mandal_id !== current.mandal_id
+          && !Object.prototype.hasOwnProperty.call(updates, "village_id")) {
+        next.village_id = "";
+        next.facility_id = "";
+      } else if (updates.village_id && updates.village_id !== current.village_id
+          && !Object.prototype.hasOwnProperty.call(updates, "facility_id")) {
+        next.facility_id = "";
+      }
+      return next;
+    });
+  }, []);
 
-  const registrationPayload = (confirmPossibleDuplicate = false) => ({
-    full_name: form.full_name.trim(),
-    sex: form.sex,
-    age_years: form.age_years === "" ? null : Number(form.age_years),
-    date_of_birth: form.date_of_birth || null,
-    preferred_language_id: Number(form.preferred_language_id),
-    village_id: Number(form.village_id),
-    facility_id: Number(form.facility_id),
-    habitation: form.habitation.trim() || null,
-    address_line: form.address_line.trim() || null,
-    consents: form.consents,
-    consent_method: form.consent_method,
-    witness_name: needsWitness ? form.witness_name.trim() : null,
-    idempotency_key: form.form_id,
-    confirm_possible_duplicate: confirmPossibleDuplicate,
-    confirmed_duplicate_ids: confirmPossibleDuplicate ? potentialMatches.map((match) => match.id) : [],
-  });
+  const registrationQuestions = useMemo(
+    () => buildRegistrationQuestions({ mandals, languages, form }),
+    [mandals, languages, form],
+  );
+
+  const receptionistParseContext = useMemo(
+    () => ({ form, mandals, languages, language }),
+    [form, mandals, languages, language],
+  );
+
+  const handleReceptionistApply = useCallback((payload) => {
+    const { patch, filled } = registrationAnswersToFormPatch(payload.answers, { form, mandals });
+    applyVoiceUpdates(patch, filled);
+  }, [applyVoiceUpdates, form, mandals]);
+
+  /** Live-update form after each valid spoken answer (no per-field yes/no). */
+  const handleReceptionistFieldAccepted = useCallback((partial) => {
+    const { patch, filled } = registrationAnswersToFormPatch(partial.answers || {}, { form, mandals });
+    applyVoiceUpdates(patch, filled);
+  }, [applyVoiceUpdates, form, mandals]);
+
+  const registrationPayload = (confirmPossibleDuplicate = false, sourceForm = form) => {
+    const witnessNeeded = WITNESS_METHODS.includes(sourceForm.consent_method);
+    return {
+      full_name: sourceForm.full_name.trim(),
+      sex: sourceForm.sex,
+      age_years: sourceForm.age_years === "" ? null : Number(sourceForm.age_years),
+      date_of_birth: sourceForm.date_of_birth || null,
+      preferred_language_id: Number(sourceForm.preferred_language_id),
+      village_id: Number(sourceForm.village_id),
+      facility_id: Number(sourceForm.facility_id),
+      habitation: (sourceForm.habitation || "").trim() || null,
+      address_line: (sourceForm.address_line || "").trim() || null,
+      consents: sourceForm.consents,
+      consent_method: sourceForm.consent_method,
+      witness_name: witnessNeeded ? (sourceForm.witness_name || "").trim() : null,
+      idempotency_key: sourceForm.form_id,
+      confirm_possible_duplicate: confirmPossibleDuplicate,
+      confirmed_duplicate_ids: confirmPossibleDuplicate ? potentialMatches.map((match) => match.id) : [],
+    };
+  };
+
+  /** Returns { ok, error?, code? } so the receptionist never assumes success. */
+  const handleReceptionistSubmit = useCallback(async (payload) => {
+    const { patch, filled } = registrationAnswersToFormPatch(payload.answers, { form, mandals });
+    const merged = { ...form, ...patch };
+    if (!merged.village_id || !merged.facility_id) {
+      const error = t("patientRegistration.selectLocationError");
+      setError(error);
+      return { ok: false, error, code: "VALIDATION" };
+    }
+    if (!merged.age_years && !merged.date_of_birth) {
+      const error = t("patientRegistration.ageOrDateRequired");
+      setError(error);
+      return { ok: false, error, code: "VALIDATION" };
+    }
+    if (!merged.consents?.DATA_PROCESSING) {
+      const error = t("patientRegistration.dataConsentMissing");
+      setError(error);
+      return { ok: false, error, code: "VALIDATION" };
+    }
+    if (merged.consents?.SCREENING === null || merged.consents?.IMAGE_CAPTURE === null) {
+      const error = t("patientRegistration.consentMissing");
+      setError(error);
+      return { ok: false, error, code: "VALIDATION" };
+    }
+    flushSync(() => {
+      applyVoiceUpdates(patch, filled);
+    });
+    setSuccess("");
+    setPotentialMatches([]);
+    setSaving(true);
+    setError("");
+    try {
+      if (shouldSaveOffline()) {
+        await saveAsOfflineDraft();
+        return { ok: true };
+      }
+      // Same idempotency_key (form_id) on retry — avoids creating a second patient.
+      const body = registrationPayload(false, merged);
+      const duplicateResponse = await api.post("/patients/duplicate-check", body);
+      if (duplicateResponse.data.matches?.length) {
+        setPotentialMatches(duplicateResponse.data.matches);
+        const error = t("patientExplorer.possibleDuplicates");
+        setError(error);
+        return { ok: false, error, code: "DUPLICATE" };
+      }
+      const response = await api.post("/patients", body);
+      const { patient } = response.data;
+      setSuccess(t(patient.already_registered ? "patientRegistration.alreadyRegistered" : "patientRegistration.created", { code: patient.patient_code }));
+      setVoiceFilledFields(new Set());
+      setForm((current) => ({
+        ...emptyForm(current.preferred_language_id),
+        mandal_id: current.mandal_id,
+        village_id: current.village_id,
+        facility_id: current.facility_id,
+      }));
+      try {
+        const patientResponse = await api.get("/patients/mine");
+        setPatients(patientResponse.data.patients || []);
+      } catch (requestError) {
+        // Patient was created; list refresh failure is not a submit failure.
+        setError(apiMessage(requestError, "patientRegistration.loadFailed"));
+      }
+      return { ok: true };
+    } catch (requestError) {
+      const error = apiMessage(requestError, "patientRegistration.createFailed");
+      setError(error);
+      const status = requestError?.response?.status;
+      const code = !requestError?.response ? "NETWORK" : (status >= 500 ? "SERVER" : "API");
+      return { ok: false, error: typeof error === "string" ? error : t("patientRegistration.createFailed"), code };
+    } finally {
+      setSaving(false);
+    }
+  // shouldSaveOffline / saveAsOfflineDraft / registrationPayload are stable enough per render
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applyVoiceUpdates, form, mandals, t]);
+
+  const registrationVoiceConfig = useMemo(() => ({
+    id: "registration",
+    mode: "registration",
+    host: "headless",
+    startLabel: "Voice Registration",
+    title: "Patient Registration",
+    questions: registrationQuestions,
+    parseAnswer: parseRegistrationAnswer,
+    parseContext: receptionistParseContext,
+    onFieldAccepted: handleReceptionistFieldAccepted,
+    onApplyAnswers: handleReceptionistApply,
+    onRequestSubmit: handleReceptionistSubmit,
+    disabled: saving,
+  }), [
+    registrationQuestions,
+    receptionistParseContext,
+    handleReceptionistFieldAccepted,
+    handleReceptionistApply,
+    handleReceptionistSubmit,
+    saving,
+  ]);
+
+  useRegisterVoiceWorkflow(registrationVoiceConfig);
+
+  const globalVoice = useGlobalVoiceOptional();
+  const startedForVoiceOnRef = useRef(false);
+  // Global Voice ON: allow page explanation first, then start registration questions.
+  useEffect(() => {
+    if (!globalVoice) return;
+    if (!globalVoice.voiceEnabled) {
+      startedForVoiceOnRef.current = false;
+      return undefined;
+    }
+    if (globalVoice.sessionActive) {
+      startedForVoiceOnRef.current = true;
+      return undefined;
+    }
+    if (globalVoice.workflowMeta?.id !== "registration") return undefined;
+    if (startedForVoiceOnRef.current) return undefined;
+    // Wait while page assist is speaking the registration intro.
+    if (globalVoice.playbackPhase === "speaking") return undefined;
+
+    const timer = window.setTimeout(() => {
+      if (startedForVoiceOnRef.current) return;
+      if (!globalVoice.voiceEnabled || globalVoice.sessionActive) return;
+      if (globalVoice.workflowMeta?.id !== "registration") return;
+      if (globalVoice.playbackPhase === "speaking") return;
+      startedForVoiceOnRef.current = true;
+      void globalVoice.startPageWorkflow();
+    }, 1000);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    globalVoice,
+    globalVoice?.voiceEnabled,
+    globalVoice?.sessionActive,
+    globalVoice?.workflowMeta?.id,
+    globalVoice?.playbackPhase,
+    globalVoice?.startPageWorkflow,
+  ]);
 
   const shouldSaveOffline = () => {
     if (isOffline) return true;
@@ -235,6 +423,7 @@ export default function PatientRegistration() {
     });
     setSuccess(t(successKey));
     setPotentialMatches([]);
+    setVoiceFilledFields(new Set());
     setForm((current) => ({
       ...emptyForm(current.preferred_language_id),
       mandal_id: current.mandal_id,
@@ -289,6 +478,7 @@ export default function PatientRegistration() {
       const { patient } = response.data;
       setSuccess(t(patient.already_registered ? "patientRegistration.alreadyRegistered" : "patientRegistration.created", { code: patient.patient_code }));
       setPotentialMatches([]);
+      setVoiceFilledFields(new Set());
       // Keep the location and language for the next patient of the same village
       setForm((current) => ({
         ...emptyForm(current.preferred_language_id),
@@ -478,7 +668,7 @@ export default function PatientRegistration() {
       {isOffline ? (
         <Alert type="warning">{t("offline.registrationOfflineNote")}</Alert>
       ) : (
-        <Alert type="info">{t("patientRegistration.assignmentNote")}</Alert>
+      <Alert type="info">{t("patientRegistration.assignmentNote")}</Alert>
       )}
       {error && <Alert type="error">{tm(error)}</Alert>}
       {success && <Alert type="success">{success}</Alert>}
@@ -601,18 +791,22 @@ export default function PatientRegistration() {
           <h3 className="patient-form-section"><UserRound size={16} /> {t("patientRegistration.sectionPatient")}</h3>
           <TextField
             id="patient-full-name"
+            className={voiceFieldClass("full_name")}
             label={t("patientRegistration.fullName")}
             value={form.full_name}
             onChange={(event) => update("full_name", event.target.value)}
             maxLength={150}
             required
+            hint={voiceFieldHint("full_name")}
           />
           <SelectField
             id="patient-sex"
+            className={voiceFieldClass("sex")}
             label={t("patientRegistration.sex")}
             value={form.sex}
             onChange={(event) => update("sex", event.target.value)}
             required
+            hint={voiceFieldHint("sex")}
           >
             <option value="">{t("patientRegistration.selectSex")}</option>
             {["FEMALE", "MALE", "OTHER", "UNDISCLOSED"].map((sex) => (
@@ -621,6 +815,7 @@ export default function PatientRegistration() {
           </SelectField>
           <TextField
             id="patient-age"
+            className={voiceFieldClass("age_years")}
             label={t("patientRegistration.age")}
             type="number"
             min="0"
@@ -628,6 +823,7 @@ export default function PatientRegistration() {
             value={form.age_years}
             onChange={(event) => update("age_years", event.target.value)}
             optionalText={t("patientRegistration.ageOptional")}
+            hint={voiceFieldHint("age_years")}
           />
           <TextField
             id="patient-date-of-birth"
@@ -640,11 +836,12 @@ export default function PatientRegistration() {
           />
           <SelectField
             id="patient-language"
+            className={voiceFieldClass("preferred_language_id")}
             label={t("patientRegistration.preferredLanguage")}
             value={form.preferred_language_id}
             onChange={(event) => update("preferred_language_id", event.target.value)}
             required
-            hint={t("patientRegistration.languageHint")}
+            hint={voiceFieldHint("preferred_language_id") || t("patientRegistration.languageHint")}
           >
             <option value="">{t("patientRegistration.selectLanguage")}</option>
             {languages.map((item) => (
@@ -667,11 +864,12 @@ export default function PatientRegistration() {
           {mandals.length > 1 ? (
             <SelectField
               id="patient-mandal"
+              className={voiceFieldClass("mandal_id")}
               label={t("patientRegistration.mandal")}
               value={form.mandal_id}
               onChange={(event) => chooseMandal(event.target.value)}
               required
-              hint={t("patientRegistration.fixedByAssignment")}
+              hint={voiceFieldHint("mandal_id") || t("patientRegistration.fixedByAssignment")}
             >
               <option value="">{t("patientRegistration.selectMandal")}</option>
               {mandals.map((mandal) => (
@@ -681,20 +879,22 @@ export default function PatientRegistration() {
           ) : (
             <TextField
               id="patient-mandal"
+              className={voiceFieldClass("mandal_id")}
               label={t("patientRegistration.mandal")}
               value={selectedMandal ? getLocalizedField(selectedMandal, "mandal_name", language) : ""}
               readOnly
-              hint={t("patientRegistration.fixedByAssignment")}
+              hint={voiceFieldHint("mandal_id") || t("patientRegistration.fixedByAssignment")}
             />
           )}
           <SelectField
             id="patient-village"
+            className={voiceFieldClass("village_id")}
             label={t("patientRegistration.village")}
             value={form.village_id}
             onChange={(event) => update("village_id", event.target.value)}
             required
             disabled={!selectedMandal}
-            hint={t(mandalWide ? "patientRegistration.villageHintMandal" : "patientRegistration.villageHintAssigned")}
+            hint={voiceFieldHint("village_id") || t(mandalWide ? "patientRegistration.villageHintMandal" : "patientRegistration.villageHintAssigned")}
           >
             <option value="">{t("patientRegistration.selectVillage")}</option>
             {(selectedMandal?.villages || []).map((village) => (
@@ -703,12 +903,13 @@ export default function PatientRegistration() {
           </SelectField>
           <SelectField
             id="patient-facility"
+            className={voiceFieldClass("facility_id")}
             label={t("patientRegistration.facility")}
             value={form.facility_id}
             onChange={(event) => update("facility_id", event.target.value)}
             required
             disabled={!form.village_id}
-            hint={t("patientRegistration.facilityHint")}
+            hint={voiceFieldHint("facility_id") || t("patientRegistration.facilityHint")}
           >
             <option value="">{t("patientRegistration.selectFacility")}</option>
             {facilityChoices.map((facility) => (
@@ -718,19 +919,23 @@ export default function PatientRegistration() {
           </>}
           <TextField
             id="patient-habitation"
+            className={voiceFieldClass("habitation")}
             label={t("patientRegistration.habitation")}
             value={form.habitation}
             onChange={(event) => update("habitation", event.target.value)}
             maxLength={150}
             optionalText={t("patientRegistration.optional")}
+            hint={voiceFieldHint("habitation")}
           />
           <TextField
             id="patient-address"
+            className={voiceFieldClass("address_line")}
             label={t("patientRegistration.address")}
             value={form.address_line}
             onChange={(event) => update("address_line", event.target.value)}
             maxLength={500}
             optionalText={t("patientRegistration.optional")}
+            hint={voiceFieldHint("address_line")}
           />
 
           <h3 className="patient-form-section"><ShieldCheck size={16} /> {t("patientRegistration.sectionConsent")}</h3>
@@ -792,6 +997,7 @@ export default function PatientRegistration() {
           <div className="patient-registration-actions">
             <Button type="button" variant="secondary" onClick={() => {
               setPotentialMatches([]);
+              setVoiceFilledFields(new Set());
               setForm(emptyForm(form.preferred_language_id));
             }}>
               {t("patientRegistration.clear")}

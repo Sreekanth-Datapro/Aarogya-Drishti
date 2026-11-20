@@ -1,0 +1,478 @@
+﻿
+FILE: C:\Users\Public\Aarogya_Drishti\backend\migrations\002_security_core.sql
+LINE: 23
+INSERT INTO tbl_role_permissions (role_id, permission_id)
+SELECT r.id, p.id
+  FROM (VALUES
+   ('SUPER_ADMIN', 'user.manage'), ('SUPER_ADMIN', 'user.create_admin'), ('SUPER_ADMIN', 'user.create_staff'),
+   ('SUPER_ADMIN', 'registration.review'), ('SUPER_ADMIN', 'audit.view'), ('SUPER_ADMIN', 'master.view'),
+   ('SUPER_ADMIN', 'master.manage'), ('SUPER_ADMIN', 'settings.manage'),
+   ('SYSTEM_ADMIN', 'user.create_staff'), ('SYSTEM_ADMIN', 'master.view'), ('SYSTEM_ADMIN', 'master.manage'),
+   ('DISTRICT_ADMIN', 'master.view'),
+   ('MEDICAL_OFFICER', 'registration.verify'), ('MEDICAL_OFFICER', 'patient.register'),
+   ('MEDICAL_OFFICER', 'consent.record')
+  ) AS m(role_code, perm_code)
+  JOIN mst_roles r ON r.code = m.role_code
+  JOIN mst_permissions p ON p.code = m.perm_code
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- 4. Final registration approval: SUPER_ADMIN may act like SYSTEM_ADMIN
+
+FILE: C:\Users\Public\Aarogya_Drishti\backend\migrations\004_lgd_locations.sql
+LINE: 112
+INSERT INTO tbl_role_permissions (role_id, permission_id)
+SELECT r.id, p.id
+  FROM mst_roles r, mst_permissions p
+ WHERE r.code = 'SUPER_ADMIN' AND p.code = 'master.import'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+FILE: C:\Users\Public\Aarogya_Drishti\backend\migrations\009_system_admin_management.sql
+LINE: 38
+INSERT INTO tbl_role_permissions (role_id, permission_id)
+SELECT r.id, p.id
+FROM mst_roles r
+JOIN mst_permissions p ON p.code IN ('role.manage', 'district_admin.manage')
+WHERE r.code = 'SYSTEM_ADMIN'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+FILE: C:\Users\Public\Aarogya_Drishti\backend\migrations\011_unify_admin_roles.sql
+LINE: 31
+INSERT INTO tbl_role_permissions (role_id, permission_id)
+SELECT canonical.id, rp.permission_id
+FROM mst_roles AS legacy
+JOIN tbl_role_permissions AS rp
+  ON rp.role_id = legacy.id
+JOIN mst_permissions AS permission
+  ON permission.id = rp.permission_id
+JOIN mst_roles AS canonical
+  ON canonical.id = 8
+ AND canonical.code = 'SUPER_ADMIN'
+WHERE legacy.id = 7
+  AND legacy.code = 'SYSTEM_ADMIN'
+  AND permission.code NOT IN ('registration.review', 'registration.verify')
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+INSERT INTO tbl_role_permissions (role_id, permission_id)
+
+FILE: C:\Users\Public\Aarogya_Drishti\backend\migrations\011_unify_admin_roles.sql
+LINE: 46
+INSERT INTO tbl_role_permissions (role_id, permission_id)
+SELECT r.id, p.id
+FROM mst_roles AS r
+CROSS JOIN mst_permissions AS p
+WHERE (r.code = 'SUPER_ADMIN' AND p.code = 'registration.monitor')
+   OR (r.code = 'MEDICAL_OFFICER' AND p.code IN ('registration.monitor', 'registration.verify'))
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+DELETE FROM tbl_role_permissions AS rp
+USING mst_permissions AS p
+WHERE rp.permission_id = p.id
+  AND p.code = 'registration.monitor'
+  AND NOT EXISTS (
+      SELECT 1
+      FROM mst_roles AS r
+      WHERE r.id = rp.role_id
+
+FILE: C:\Users\Public\Aarogya_Drishti\backend\migrations\015_two_stage_registration.sql
+LINE: 261
+INSERT INTO tbl_role_permissions (role_id, permission_id)
+SELECT role.id, permission.id
+  FROM (VALUES
+      ('MEDICAL_OFFICER', 'registration.recommend'),
+      ('DISTRICT_ADMIN', 'registration.monitor'),
+      ('DISTRICT_ADMIN', 'registration.finalize')
+  ) AS required_grant(role_code, permission_code)
+  JOIN mst_roles role
+    ON role.code = required_grant.role_code
+   AND role.is_active IS TRUE
+  JOIN mst_permissions permission
+    ON permission.code = required_grant.permission_code
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+DELETE FROM tbl_role_permissions rp
+ USING mst_permissions permission, mst_roles role
+
+FILE: C:\Users\Public\Aarogya_Drishti\backend\migrations\020_specialist_consultation_booking.sql
+LINE: 14
+INSERT INTO tbl_role_permissions (role_id, permission_id)
+SELECT role_row.id, permission_row.id
+  FROM mst_roles role_row
+  CROSS JOIN mst_permissions permission_row
+ WHERE role_row.code = 'SPECIALIST'
+   AND permission_row.code = 'appointment.book'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+FILE: C:\Users\Public\Aarogya_Drishti\backend\migrations\021_specialist_consultation_slot_management.sql
+LINE: 18
+INSERT INTO tbl_role_permissions (role_id, permission_id)
+SELECT role_row.id, permission_row.id
+  FROM mst_roles role_row
+  CROSS JOIN mst_permissions permission_row
+ WHERE role_row.code = 'SPECIALIST'
+   AND permission_row.code = 'appointment.slot_manage'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+FILE: C:\Users\Public\Aarogya_Drishti\backend\migrations\025_video_join_hw_navigator.sql
+LINE: 19
+INSERT INTO tbl_role_permissions (role_id, permission_id)
+SELECT role_row.id, permission_row.id
+  FROM mst_roles role_row
+  CROSS JOIN mst_permissions permission_row
+ WHERE role_row.code IN ('HEALTH_WORKER', 'NAVIGATOR')
+   AND permission_row.code = 'video.join'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+FILE: C:\Users\Public\Aarogya_Drishti\backend\migrations\026_patient_care_lifecycle.sql
+LINE: 287
+INSERT INTO tbl_role_permissions (role_id, permission_id)
+SELECT role_row.id, permission_row.id
+  FROM mst_roles role_row
+  CROSS JOIN mst_permissions permission_row
+ WHERE (
+        (role_row.code = 'MEDICAL_OFFICER' AND permission_row.code IN (
+          'care.plan_manage', 'care.final_review', 'care.close', 'care.followup_assign'
+        ))
+     OR (role_row.code = 'SPECIALIST' AND permission_row.code IN (
+          'care.plan_manage'
+        ))
+     OR (role_row.code = 'NAVIGATOR' AND permission_row.code IN (
+          'care.followup_assign'
+        ))
+     OR (role_row.code = 'HEALTH_WORKER' AND permission_row.code IN (
+          'care.followup_report', 'care.discomfort_report'
+
+FILE: C:\Users\Public\Aarogya_Drishti\backend\migrations\029_diagnostic_module.sql
+LINE: 164
+INSERT INTO tbl_role_permissions (role_id, permission_id)
+SELECT role_row.id, permission_row.id
+  FROM mst_roles role_row
+  CROSS JOIN mst_permissions permission_row
+ WHERE role_row.code IN ('MEDICAL_OFFICER', 'SPECIALIST')
+   AND permission_row.code = 'investigation.record'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- Navigator and clinicians can list diagnostic orders for assigned patients
+INSERT INTO mst_permissions (code, resource, action, description)
+SELECT 'diagnostic.view', 'diagnostic', 'view', 'View diagnostic orders for assigned patients'
+ WHERE NOT EXISTS (SELECT 1 FROM mst_permissions WHERE code = 'diagnostic.view');
+
+INSERT INTO tbl_role_permissions (role_id, permission_id)
+SELECT role_row.id, permission_row.id
+  FROM mst_roles role_row
+
+FILE: C:\Users\Public\Aarogya_Drishti\backend\migrations\029_diagnostic_module.sql
+LINE: 177
+INSERT INTO tbl_role_permissions (role_id, permission_id)
+SELECT role_row.id, permission_row.id
+  FROM mst_roles role_row
+  CROSS JOIN mst_permissions permission_row
+ WHERE role_row.code IN ('NAVIGATOR', 'MEDICAL_OFFICER', 'SPECIALIST', 'SYSTEM_ADMIN', 'SUPER_ADMIN')
+   AND permission_row.code = 'diagnostic.view'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+FILE: C:\Users\Public\Aarogya_Drishti\backend\migrations\030_diagnostic_scheduling.sql
+LINE: 98
+INSERT INTO tbl_role_permissions (role_id, permission_id)
+SELECT role_row.id, permission_row.id
+  FROM mst_roles role_row
+  CROSS JOIN mst_permissions permission_row
+ WHERE role_row.code = 'NAVIGATOR'
+   AND permission_row.code IN ('diagnostic.schedule', 'diagnostic.view')
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+INSERT INTO tbl_role_permissions (role_id, permission_id)
+SELECT role_row.id, permission_row.id
+  FROM mst_roles role_row
+  CROSS JOIN mst_permissions permission_row
+ WHERE role_row.code = 'HOSPITAL_STAFF'
+   AND permission_row.code IN ('diagnostic.confirm', 'diagnostic.view')
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+
+FILE: C:\Users\Public\Aarogya_Drishti\backend\migrations\030_diagnostic_scheduling.sql
+LINE: 106
+INSERT INTO tbl_role_permissions (role_id, permission_id)
+SELECT role_row.id, permission_row.id
+  FROM mst_roles role_row
+  CROSS JOIN mst_permissions permission_row
+ WHERE role_row.code = 'HOSPITAL_STAFF'
+   AND permission_row.code IN ('diagnostic.confirm', 'diagnostic.view')
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+INSERT INTO tbl_role_permissions (role_id, permission_id)
+SELECT role_row.id, permission_row.id
+  FROM mst_roles role_row
+  CROSS JOIN mst_permissions permission_row
+ WHERE role_row.code = 'HEALTH_WORKER'
+   AND permission_row.code IN ('diagnostic.followup', 'diagnostic.view')
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+FILE: C:\Users\Public\Aarogya_Drishti\backend\migrations\030_diagnostic_scheduling.sql
+LINE: 114
+INSERT INTO tbl_role_permissions (role_id, permission_id)
+SELECT role_row.id, permission_row.id
+  FROM mst_roles role_row
+  CROSS JOIN mst_permissions permission_row
+ WHERE role_row.code = 'HEALTH_WORKER'
+   AND permission_row.code IN ('diagnostic.followup', 'diagnostic.view')
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+FILE: C:\Users\Public\Aarogya_Drishti\backend\migrations\034_diagnostic_reports_care_duration.sql
+LINE: 70
+INSERT INTO tbl_role_permissions (role_id, permission_id)
+SELECT role_row.id, permission_row.id
+  FROM mst_roles role_row
+  CROSS JOIN mst_permissions permission_row
+ WHERE role_row.code IN ('HEALTH_WORKER', 'HOSPITAL_STAFF')
+   AND permission_row.code = 'diagnostic.report_upload'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+INSERT INTO tbl_role_permissions (role_id, permission_id)
+SELECT role_row.id, permission_row.id
+  FROM mst_roles role_row
+  CROSS JOIN mst_permissions permission_row
+ WHERE role_row.code IN ('MEDICAL_OFFICER', 'SPECIALIST')
+   AND permission_row.code = 'diagnostic.report_review'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+
+FILE: C:\Users\Public\Aarogya_Drishti\backend\migrations\034_diagnostic_reports_care_duration.sql
+LINE: 78
+INSERT INTO tbl_role_permissions (role_id, permission_id)
+SELECT role_row.id, permission_row.id
+  FROM mst_roles role_row
+  CROSS JOIN mst_permissions permission_row
+ WHERE role_row.code IN ('MEDICAL_OFFICER', 'SPECIALIST')
+   AND permission_row.code = 'diagnostic.report_review'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+INSERT INTO tbl_role_permissions (role_id, permission_id)
+SELECT role_row.id, permission_row.id
+  FROM mst_roles role_row
+  CROSS JOIN mst_permissions permission_row
+ WHERE role_row.code IN (
+     'NAVIGATOR', 'MEDICAL_OFFICER', 'SPECIALIST', 'HEALTH_WORKER',
+     'HOSPITAL_STAFF', 'SYSTEM_ADMIN', 'SUPER_ADMIN'
+   )
+
+FILE: C:\Users\Public\Aarogya_Drishti\backend\migrations\034_diagnostic_reports_care_duration.sql
+LINE: 86
+INSERT INTO tbl_role_permissions (role_id, permission_id)
+SELECT role_row.id, permission_row.id
+  FROM mst_roles role_row
+  CROSS JOIN mst_permissions permission_row
+ WHERE role_row.code IN (
+     'NAVIGATOR', 'MEDICAL_OFFICER', 'SPECIALIST', 'HEALTH_WORKER',
+     'HOSPITAL_STAFF', 'SYSTEM_ADMIN', 'SUPER_ADMIN'
+   )
+   AND permission_row.code = 'diagnostic.view'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+INSERT INTO mst_notification_templates (code, language_id, channel, subject, body)
+SELECT v.code, language.id, 'IN_APP', v.subject, v.body
+  FROM (VALUES
+    ('DIAGNOSTIC_REPORT_UPLOADED', 'en', 'Diagnostic report uploaded',
+     'A diagnostic report was uploaded and is ready for review.'),
+
+FILE: C:\Users\Public\Aarogya_Drishti\backend\migrations\036_specialist_care_lifecycle.sql
+LINE: 66
+INSERT INTO tbl_role_permissions (role_id, permission_id)
+SELECT role_row.id, permission_row.id
+  FROM mst_roles role_row
+  CROSS JOIN mst_permissions permission_row
+ WHERE role_row.code = 'SPECIALIST'
+   AND permission_row.code IN ('care.final_review', 'care.close')
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+FILE: C:\Users\Public\Aarogya_Drishti\backend\migrations\038_dynamic_page_rbac.sql
+LINE: 117
+INSERT INTO tbl_role_permissions (role_id, permission_id)
+SELECT role_row.id, permission_row.id
+  FROM mst_roles role_row
+  CROSS JOIN mst_permissions permission_row
+  JOIN (VALUES
+    ('SUPER_ADMIN', 'page.districtAdmins'),
+    ('SUPER_ADMIN', 'page.staffManagement'),
+    ('SUPER_ADMIN', 'page.healthWorkerAssignments'),
+    ('SUPER_ADMIN', 'page.roleManagement'),
+    ('SUPER_ADMIN', 'page.locationImport'),
+    ('SUPER_ADMIN', 'page.facilities'),
+    ('SUPER_ADMIN', 'page.diagnosticTestMaster'),
+    ('SUPER_ADMIN', 'page.registrationMonitoring'),
+    ('SUPER_ADMIN', 'page.reports'),
+    ('SUPER_ADMIN', 'page.auditLogs'),
+    ('SUPER_ADMIN', 'page.settings'),
+
+FILE: C:\Users\Public\Aarogya_Drishti\backend\migrations\039_diagnostic_navigator_workflow.sql
+LINE: 188
+INSERT INTO tbl_role_permissions (role_id, permission_id)
+SELECT role_row.id, permission_row.id
+  FROM mst_roles role_row
+  CROSS JOIN mst_permissions permission_row
+ WHERE role_row.code = 'NAVIGATOR'
+   AND permission_row.code IN (
+     'diagnostic.assign_hw', 'diagnostic.verify', 'diagnostic.forward_hs', 'diagnostic.advice_forward'
+   )
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+INSERT INTO tbl_role_permissions (role_id, permission_id)
+SELECT role_row.id, permission_row.id
+  FROM mst_roles role_row
+  CROSS JOIN mst_permissions permission_row
+ WHERE role_row.code = 'HOSPITAL_STAFF'
+   AND permission_row.code = 'diagnostic.route_specialist'
+
+FILE: C:\Users\Public\Aarogya_Drishti\backend\migrations\039_diagnostic_navigator_workflow.sql
+LINE: 198
+INSERT INTO tbl_role_permissions (role_id, permission_id)
+SELECT role_row.id, permission_row.id
+  FROM mst_roles role_row
+  CROSS JOIN mst_permissions permission_row
+ WHERE role_row.code = 'HOSPITAL_STAFF'
+   AND permission_row.code = 'diagnostic.route_specialist'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+INSERT INTO tbl_role_permissions (role_id, permission_id)
+SELECT role_row.id, permission_row.id
+  FROM mst_roles role_row
+  CROSS JOIN mst_permissions permission_row
+ WHERE role_row.code = 'SPECIALIST'
+   AND permission_row.code = 'diagnostic.advice_sign'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+
+FILE: C:\Users\Public\Aarogya_Drishti\backend\migrations\039_diagnostic_navigator_workflow.sql
+LINE: 206
+INSERT INTO tbl_role_permissions (role_id, permission_id)
+SELECT role_row.id, permission_row.id
+  FROM mst_roles role_row
+  CROSS JOIN mst_permissions permission_row
+ WHERE role_row.code = 'SPECIALIST'
+   AND permission_row.code = 'diagnostic.advice_sign'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+INSERT INTO tbl_role_permissions (role_id, permission_id)
+SELECT role_row.id, permission_row.id
+  FROM mst_roles role_row
+  CROSS JOIN mst_permissions permission_row
+ WHERE role_row.code = 'HEALTH_WORKER'
+   AND permission_row.code = 'diagnostic.patient_followup'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+
+FILE: C:\Users\Public\Aarogya_Drishti\backend\migrations\039_diagnostic_navigator_workflow.sql
+LINE: 214
+INSERT INTO tbl_role_permissions (role_id, permission_id)
+SELECT role_row.id, permission_row.id
+  FROM mst_roles role_row
+  CROSS JOIN mst_permissions permission_row
+ WHERE role_row.code = 'HEALTH_WORKER'
+   AND permission_row.code = 'diagnostic.patient_followup'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- Notification templates for each handoff.
+INSERT INTO mst_notification_templates (code, language_id, channel, subject, body)
+SELECT v.code, language.id, 'IN_APP', v.subject, v.body
+  FROM (VALUES
+    ('DIAGNOSTIC_NAV_ASSIGN_HW', 'en', 'Diagnostic collection assigned',
+     'Navigator assigned a diagnostic collection task to you.'),
+    ('DIAGNOSTIC_NAV_ASSIGN_HW', 'te', 'డయాగ్నస్టిక్ సేకరణ కేటాయించబడింది',
+     'నావిగేటర్ మీకు డయాగ్నస్టిక్ సేకరణ పని కేటాయించారు.'),
+
+FILE: C:\Users\Public\Aarogya_Drishti\backend\migrations\040_system_admin_role_manage.sql
+LINE: 6
+INSERT INTO tbl_role_permissions (role_id, permission_id)
+SELECT role_row.id, permission_row.id
+  FROM mst_roles role_row
+  CROSS JOIN mst_permissions permission_row
+ WHERE role_row.code = 'SYSTEM_ADMIN'
+   AND role_row.is_active IS TRUE
+   AND permission_row.code = 'role.manage'
+ ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+FILE: C:\Users\Public\Aarogya_Drishti\backend\migrations\041_district_custom_accounts_page.sql
+LINE: 11
+INSERT INTO tbl_role_permissions (role_id, permission_id)
+SELECT role_row.id, permission_row.id
+  FROM mst_roles role_row
+  CROSS JOIN mst_permissions permission_row
+ WHERE role_row.code = 'DISTRICT_ADMIN'
+   AND role_row.is_active IS TRUE
+   AND permission_row.code = 'page.districtCustomAccounts'
+ ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+FILE: C:\Users\Public\Aarogya_Drishti\backend\migrations\042_diagnostic_followup_reassessment_cycle.sql
+LINE: 236
+INSERT INTO tbl_role_permissions (role_id, permission_id)
+SELECT role_row.id, permission_row.id
+  FROM mst_roles role_row
+  CROSS JOIN mst_permissions permission_row
+ WHERE role_row.code = 'NAVIGATOR'
+   AND permission_row.code = 'diagnostic.followup_verify'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+INSERT INTO tbl_role_permissions (role_id, permission_id)
+SELECT role_row.id, permission_row.id
+  FROM mst_roles role_row
+  CROSS JOIN mst_permissions permission_row
+ WHERE role_row.code = 'SPECIALIST'
+   AND permission_row.code IN ('diagnostic.reassess', 'diagnostic.case_close', 'diagnostic.advice_sign')
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+
+FILE: C:\Users\Public\Aarogya_Drishti\backend\migrations\042_diagnostic_followup_reassessment_cycle.sql
+LINE: 244
+INSERT INTO tbl_role_permissions (role_id, permission_id)
+SELECT role_row.id, permission_row.id
+  FROM mst_roles role_row
+  CROSS JOIN mst_permissions permission_row
+ WHERE role_row.code = 'SPECIALIST'
+   AND permission_row.code IN ('diagnostic.reassess', 'diagnostic.case_close', 'diagnostic.advice_sign')
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- 5. Notification templates
+-- ---------------------------------------------------------------------------
+INSERT INTO mst_notification_templates (code, language_id, channel, subject, body)
+SELECT v.code, language.id, 'IN_APP', v.subject, v.body
+  FROM (VALUES
+    ('DIAGNOSTIC_FOLLOWUP_RETURNED', 'en', 'Follow-up report returned',
+     'Navigator returned a patient follow-up report for correction.'),
+
+FILE: C:\Users\Public\Aarogya_Drishti\backend\database\seeds\AAROGYA_INITIAL_SEED.sql
+LINE: 3048
+INSERT INTO public.tbl_role_permissions (role_id, permission_id)
+SELECT r.id, p.id
+FROM (VALUES
+  ('DISTRICT_ADMIN', 'dashboard.view_aggregate'),
+  ('DISTRICT_ADMIN', 'export.aggregate'),
+  ('DISTRICT_ADMIN', 'master.view'),
+  ('DISTRICT_ADMIN', 'page.districtAuditLogs'),
+  ('DISTRICT_ADMIN', 'page.districtCustomAccounts'),
+  ('DISTRICT_ADMIN', 'page.districtFacilities'),
+  ('DISTRICT_ADMIN', 'page.districtHealthWorkers'),
+  ('DISTRICT_ADMIN', 'page.districtHospitalStaff'),
+  ('DISTRICT_ADMIN', 'page.districtLocations'),
+  ('DISTRICT_ADMIN', 'page.districtMedicalOfficers'),
+  ('DISTRICT_ADMIN', 'page.districtNavigators'),
+  ('DISTRICT_ADMIN', 'page.districtPatients'),
+  ('DISTRICT_ADMIN', 'page.districtProgramme'),
+
+FILE: C:\Users\Public\Aarogya_Drishti\backend\database\seeds\AAROGYA_RENDER_MINIMAL_SEED.sql
+LINE: 338
+INSERT INTO public.tbl_role_permissions (role_id, permission_id)
+SELECT r.id, p.id
+FROM (VALUES
+  ('DISTRICT_ADMIN', 'dashboard.view_aggregate'),
+  ('DISTRICT_ADMIN', 'export.aggregate'),
+  ('DISTRICT_ADMIN', 'master.view'),
+  ('DISTRICT_ADMIN', 'page.districtAuditLogs'),
+  ('DISTRICT_ADMIN', 'page.districtCustomAccounts'),
+  ('DISTRICT_ADMIN', 'page.districtFacilities'),
+  ('DISTRICT_ADMIN', 'page.districtHealthWorkers'),
+  ('DISTRICT_ADMIN', 'page.districtHospitalStaff'),
+  ('DISTRICT_ADMIN', 'page.districtLocations'),
+  ('DISTRICT_ADMIN', 'page.districtMedicalOfficers'),
+  ('DISTRICT_ADMIN', 'page.districtNavigators'),
+  ('DISTRICT_ADMIN', 'page.districtPatients'),
+  ('DISTRICT_ADMIN', 'page.districtProgramme'),

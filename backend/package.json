@@ -11,6 +11,7 @@
     "build:native": "npm --prefix ../frontend ci && npm --prefix ../frontend run build && node scripts/syncFrontendBuild.js",
     "migrate": "node scripts/migrate.js",
     "migrate:apply": "node scripts/migrate.js --apply",
+    "seed:admin": "node database/seeds/create-system-admin.js",
     "verify:ai": "node scripts/verify-real-esrgan.js"
   },
   "author": "",

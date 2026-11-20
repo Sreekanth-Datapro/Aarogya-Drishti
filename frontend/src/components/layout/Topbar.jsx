@@ -10,12 +10,16 @@ import {
   CheckCircle2,
   Settings,
   ChevronRight,
+  Download,
 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { useAuth } from "../../context/AuthContext";
 import { formatLocalizedDate, formatLocalizedDateTime, getRoleLabel } from "../../i18n/displayLabels";
 import api from "../../services/api";
+import GlobalVoiceHeaderControl from "../../voice/global/GlobalVoiceHeaderControl";
+import { useGlobalVoiceOptional } from "../../voice/global/GlobalVoiceContext";
+import usePwaInstall from "../../pwa/usePwaInstall";
 import "./Topbar.css";
 
 const NOTIFICATION_COPY_KEYS = {
@@ -116,6 +120,9 @@ function useLiveClock() {
  */
 export default function Topbar({ title, user, menuOpen, onMenuClick }) {
   const { t, language, setLanguage } = useLanguage();
+  const { canPrompt, showIosHelp, install } = usePwaInstall();
+  const showInstallHint = canPrompt || showIosHelp;
+  const globalVoice = useGlobalVoiceOptional();
   const { logout, isOffline } = useAuth();
   const navigate = useNavigate();
   const clock = useLiveClock();
@@ -251,7 +258,36 @@ export default function Topbar({ title, user, menuOpen, onMenuClick }) {
           </span>
         </div>
 
-        {/* Language Selector */}
+        {/* Global Voice Receptionist (Sarvam) — explicit user activation only */}
+        <GlobalVoiceHeaderControl key="global-voice-header" />
+
+        {/* PWA install — only when browser can prompt or iOS Add-to-Home-Screen help applies */}
+        {showInstallHint ? (
+          canPrompt ? (
+            <button
+              type="button"
+              className="topbar-install-btn"
+              onClick={() => install()}
+              aria-label={t("pwa.installButton")}
+              title={t("pwa.installTitle")}
+            >
+              <Download size={16} aria-hidden="true" />
+              <span className="topbar-install-label">{t("pwa.installButton")}</span>
+            </button>
+          ) : (
+            <Link
+              to="/settings"
+              className="topbar-install-btn"
+              aria-label={t("pwa.installTitle")}
+              title={t("pwa.iosHelpTitle")}
+            >
+              <Download size={16} aria-hidden="true" />
+              <span className="topbar-install-label">{t("pwa.installButton")}</span>
+            </Link>
+          )
+        ) : null}
+
+        {/* UI Language Selector */}
         <div className="header-dropdown-wrap" ref={langRef}>
           <button
             type="button"
@@ -272,6 +308,7 @@ export default function Topbar({ title, user, menuOpen, onMenuClick }) {
                 className={`dropdown-item ${language === "en" ? "active" : ""}`}
                 onClick={() => {
                   setLanguage("en");
+                  globalVoice?.setVoiceLocale?.("en");
                   setLangOpen(false);
                 }}
               >
@@ -283,6 +320,7 @@ export default function Topbar({ title, user, menuOpen, onMenuClick }) {
                 className={`dropdown-item ${language === "te" ? "active" : ""}`}
                 onClick={() => {
                   setLanguage("te");
+                  globalVoice?.setVoiceLocale?.("te");
                   setLangOpen(false);
                 }}
               >

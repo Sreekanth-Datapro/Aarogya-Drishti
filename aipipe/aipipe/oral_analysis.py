@@ -1,7 +1,11 @@
 import io
+import hashlib
 import json
+import logging
 import re
+from time import perf_counter
 import warnings
+from datetime import datetime, timezone
 from typing import Protocol
 
 from PIL import Image, ImageOps, ImageStat, UnidentifiedImageError
@@ -10,6 +14,13 @@ from starlette.concurrency import run_in_threadpool
 
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 MAX_IMAGE_PIXELS = 40_000_000
+logger = logging.getLogger("oral-image-api")
+
+
+def _log_ai_flow(event: str, **details) -> None:
+    safe_details = " ".join(f"{key}={value}" for key, value in details.items())
+    logger.info("oral-screening-ai %s %s", event, safe_details)
+
 ALLOWED_IMAGE_TYPES = {
     "image/jpeg": "JPEG",
     "image/png": "PNG",
@@ -32,6 +43,7 @@ CATEGORY_FEATURES = {
         "WHITE_OR_RED_PATCHES",
         "VISIBLE_ULCERS",
         "GUM_APPEARANCE_CHANGES",
+        "OTHER_VISIBLE_ABNORMALITIES",
     ),
     "TONGUE": (
         "WHITE_COATING",
@@ -39,6 +51,7 @@ CATEGORY_FEATURES = {
         "VISIBLE_SORES",
         "SURFACE_CHANGES",
         "SWELLING",
+        "OTHER_VISIBLE_ABNORMALITIES",
     ),
     "SKIN": (
         "REDNESS",
@@ -47,6 +60,7 @@ CATEGORY_FEATURES = {
         "SWELLING",
         "DRY_SCALY_APPEARANCE",
         "VISIBLE_SORES",
+        "OTHER_VISIBLE_ABNORMALITIES",
     ),
 }
 
@@ -56,6 +70,7 @@ FEATURE_LABELS = {
     "WHITE_OR_RED_PATCHES": "White/red patches",
     "VISIBLE_ULCERS": "Visible ulcers",
     "GUM_APPEARANCE_CHANGES": "Gum appearance changes",
+    "OTHER_VISIBLE_ABNORMALITIES": "Other visible abnormalities",
     "WHITE_COATING": "White coating",
     "REDNESS": "Redness",
     "VISIBLE_SORES": "Visible sores",
@@ -99,8 +114,21 @@ class OralVisionModel(Protocol):
     def get_model_information(self) -> dict:
         ...
 
-    async def analyze(self, image_data: bytes, view: str, category: str = "MOUTH") -> dict:
+    async def analyze(
+        self,
+        image_data: bytes,
+        view: str,
+        category: str = "MOUTH",
+        *,
+        screening_reference: str | None = None,
+    ) -> dict:
         ...
+
+
+class InvalidProviderOutputError(ValueError):
+    def __init__(self, provider_trace: dict):
+        super().__init__("The provider response did not pass structured output validation.")
+        self.provider_trace = provider_trace
 
 
 class InvalidImageError(ValueError):
@@ -301,6 +329,31 @@ def build_criterion_scores(findings: list[dict]) -> list[dict]:
             ),
         })
     return reports
+
+
+def _usable_finding_count(findings: list[dict] | None) -> int:
+    """Count findings with usable appearance scales 0/1/2/3 (excludes N/A and blank)."""
+    count = 0
+    for item in findings or []:
+        if not isinstance(item, dict):
+            continue
+        scale = str(item.get("scale") if item.get("scale") is not None else "")
+        if scale in {"0", "1", "2", "3"}:
+            count += 1
+    return count
+
+
+def _is_unexpectedly_empty_ok(model_status: str, findings: list[dict] | None) -> bool:
+    """
+    True when model_status is OK but no usable structured findings were returned.
+
+    Empty / missing lists and only-N/A findings under OK are unexpected for scoring
+    and must not be treated as healthy observations. NOT_ASSESSABLE with empty
+    findings is expected and returns False.
+    """
+    if str(model_status or "").strip().upper() != "OK":
+        return False
+    return _usable_finding_count(findings) == 0
 
 
 def compute_visual_health_assessment_score(
@@ -555,37 +608,6 @@ def validate_ai_result(result: dict, *, view: str = "FRONT_VIEW", category: str 
     )
     allowed = set(CATEGORY_FEATURES[selected_category])
 
-    # Legacy NORMAL/ABNORMAL/UNCERTAIN payloads remain accepted for compatibility.
-    if "possible_visual_findings" not in result and result.get("classification") in {"NORMAL", "ABNORMAL", "UNCERTAIN"}:
-        confidence = _coerce_confidence(result.get("confidence"))
-        image_quality = result.get("image_quality")
-        if image_quality not in IMAGE_QUALITY_VALUES:
-            raise ValueError("The vision model returned an unsupported image-quality value.")
-        recommendation = result.get("recommendation")
-        if not isinstance(recommendation, str) or not recommendation.strip() or len(recommendation) > 500:
-            raise ValueError("The vision model recommendation is invalid.")
-        classification = result["classification"]
-        observations = _text_list(result.get("observations"), "observations")
-        abnormalities = _text_list(result.get("abnormalities"), "abnormalities")
-        model_status = "NOT_ASSESSABLE" if classification == "UNCERTAIN" else "OK"
-        # Legacy payloads have no structured findings — score cannot be calculated.
-        visual_score = compute_visual_health_assessment_score([], model_status=model_status)
-        return {
-            "view": view,
-            "selected_category": selected_category,
-            "model_status": model_status,
-            "image_quality": image_quality,
-            "observation_confidence": confidence,
-            "not_assessable_reason": observations[0] if model_status == "NOT_ASSESSABLE" and observations else None,
-            "possible_visual_findings": [],
-            "classification": classification,
-            "confidence": confidence,
-            "observations": observations,
-            "abnormalities": abnormalities,
-            "recommendation": CLINICIAN_REVIEW_RECOMMENDATION,
-            **visual_score,
-        }
-
     model_status = str(result.get("model_status") or "").strip().upper()
     if model_status not in MODEL_STATUSES:
         raise ValueError("The vision model returned an unsupported model_status.")
@@ -603,27 +625,24 @@ def validate_ai_result(result: dict, *, view: str = "FRONT_VIEW", category: str 
     if len(seen) != len(findings):
         raise ValueError("possible_visual_findings contains duplicate features.")
 
-    # Score from model-returned findings only — never treat padded defaults as healthy.
-    visual_score = compute_visual_health_assessment_score(findings, model_status=model_status)
-
     not_assessable_reason = result.get("not_assessable_reason")
     if model_status == "NOT_ASSESSABLE":
         if not isinstance(not_assessable_reason, str) or not not_assessable_reason.strip() or len(not_assessable_reason) > 500:
             raise ValueError("not_assessable_reason is required when the image is not assessable.")
         not_assessable_reason = not_assessable_reason.strip()
-        findings = [
-            {"feature": feature, "scale": "N/A", "note": None}
-            for feature in CATEGORY_FEATURES[selected_category]
-        ]
+        if any(item["scale"] != "N/A" for item in findings):
+            raise ValueError("A not-assessable response cannot contain observed findings.")
+        findings = []
     else:
         not_assessable_reason = None
-        # Pad omitted features as "not observed" so partial model JSON remains usable.
-        for feature in CATEGORY_FEATURES[selected_category]:
-            if feature not in seen:
-                findings.append({"feature": feature, "scale": "0", "note": None})
+        if seen != set(allowed):
+            raise ValueError("The vision model did not assess every required visual feature.")
+        if _is_unexpectedly_empty_ok(model_status, findings):
+            raise ValueError("The vision model returned no usable visual findings.")
         order = {feature: index for index, feature in enumerate(CATEGORY_FEATURES[selected_category])}
         findings.sort(key=lambda item: order.get(item["feature"], 999))
 
+    visual_score = compute_visual_health_assessment_score(findings, model_status=model_status)
     confidence_raw = result.get("observation_confidence", result.get("confidence"))
     if model_status == "NOT_ASSESSABLE" and confidence_raw is None:
         confidence = 0
@@ -710,21 +729,208 @@ class GemmaCloudVision:
             "validation_status": "NOT_VALIDATED",
         }
 
-    async def analyze(self, image_data: bytes, view: str, category: str = "MOUTH") -> dict:
+    async def analyze(
+        self,
+        image_data: bytes,
+        view: str,
+        category: str = "MOUTH",
+        *,
+        screening_reference: str | None = None,
+    ) -> dict:
         selected = normalize_analysis_category(category)
         prompt = build_analysis_prompt(view, selected)
-        response = await run_in_threadpool(
-            self.client.chat,
+        reference_hash = (
+            hashlib.sha256(screening_reference.encode("utf-8")).hexdigest()[:12]
+            if screening_reference
+            else "unavailable"
+        )
+        inference_started_at = perf_counter()
+        _log_ai_flow(
+            "inference_started",
+            provider="cloudflare-workers-ai",
             model=self.model_name,
-            messages=[{
-                "role": "user",
-                "content": prompt,
-                "images": [image_data],
-            }],
-            format="json",
-            options={"temperature": 0},
+            screening_ref=reference_hash,
+            view=view,
+            category=selected,
+            image_bytes=len(image_data),
+        )
+        try:
+            response = await run_in_threadpool(
+                self.client.chat,
+                model=self.model_name,
+                messages=[{
+                    "role": "user",
+                    "content": prompt,
+                    "images": [image_data],
+                }],
+                format="json",
+                options={"temperature": 0},
+            )
+        except Exception as error:
+            trace = getattr(error, "provider_trace", None)
+            inference_duration_ms = round((perf_counter() - inference_started_at) * 1000)
+            if isinstance(trace, dict):
+                trace["inference_duration_ms"] = inference_duration_ms
+            _log_ai_flow(
+                "inference_completed",
+                provider="cloudflare-workers-ai",
+                model=self.model_name,
+                screening_ref=reference_hash,
+                view=view,
+                provider_request_started=(trace or {}).get("provider_request_started", False),
+                inference_performed=(trace or {}).get("inference_performed", False),
+                provider_response_received=(trace or {}).get("provider_response_received", False),
+                model_output_usable=False,
+                inference_duration_ms=inference_duration_ms,
+                error_code=(trace or {}).get("error_code", "PROVIDER_REQUEST_FAILED"),
+                http_status=(trace or {}).get("provider_http_status") or getattr(error, "status_code", None) or "unknown",
+            )
+            raise
+
+        provider_trace = getattr(response, "provider_trace", None)
+        inference_duration_ms = round((perf_counter() - inference_started_at) * 1000)
+        if not isinstance(provider_trace, dict) or any(
+            not isinstance(provider_trace.get(key), bool)
+            for key in ("provider_request_started", "provider_request_success", "provider_response_received")
+        ):
+            invalid_trace = {
+                "provider_request_started": False,
+                "provider_request_success": False,
+                "provider_response_received": False,
+                "provider_http_status": None,
+                "inference_performed": False,
+                "provider_response_validated": False,
+                "model_output_usable": False,
+                "error_code": "PROVIDER_TRACE_MISSING",
+                "inference_duration_ms": inference_duration_ms,
+            }
+            _log_ai_flow(
+                "inference_completed",
+                provider="cloudflare-workers-ai",
+                model=self.model_name,
+                screening_ref=reference_hash,
+                view=view,
+                provider_request_started=False,
+                inference_performed=False,
+                provider_response_received=False,
+                model_output_usable=False,
+                inference_duration_ms=inference_duration_ms,
+                error_code=invalid_trace["error_code"],
+            )
+            raise InvalidProviderOutputError(invalid_trace)
+        provider_trace = {
+            "provider_request_started": provider_trace["provider_request_started"],
+            "provider_request_success": provider_trace["provider_request_success"],
+            "provider_response_received": provider_trace["provider_response_received"],
+            "provider_http_status": provider_trace.get("provider_http_status"),
+            "inference_performed": (
+                provider_trace["provider_request_success"]
+                and provider_trace["provider_response_received"]
+            ),
+            "provider_response_validated": False,
+            "model_output_usable": False,
+            "error_code": None,
+            "inference_duration_ms": inference_duration_ms,
+        }
+        _log_ai_flow(
+            "inference_completed",
+            provider="cloudflare-workers-ai",
+            model=self.model_name,
+            screening_ref=reference_hash,
+            view=view,
+            provider_request_started=provider_trace["provider_request_started"],
+            inference_performed=provider_trace["inference_performed"],
+            provider_response_received=provider_trace["provider_response_received"],
+            provider_http_status=provider_trace["provider_http_status"] or "unknown",
+            model_output_usable=False,
+            inference_duration_ms=inference_duration_ms,
+        )
+        _log_ai_flow(
+            "provider_response_received",
+            provider="cloudflare-workers-ai",
+            model=self.model_name,
+            screening_ref=reference_hash,
+            view=view,
+            http_status=provider_trace["provider_http_status"] or "unknown",
+            request_success=provider_trace["provider_request_success"],
         )
         content = getattr(getattr(response, "message", None), "content", None)
         if content is None and isinstance(response, dict):
             content = (response.get("message") or {}).get("content")
-        return validate_ai_result(extract_json_response(content), view=view, category=selected)
+        try:
+            parsed = extract_json_response(content)
+        except ValueError as error:
+            provider_trace["error_code"] = "MODEL_OUTPUT_INVALID"
+            _log_ai_flow(
+                "provider_json_parsed",
+                provider="cloudflare-workers-ai",
+                model=self.model_name,
+                screening_ref=reference_hash,
+                view=view,
+                parsed=False,
+                error_code=provider_trace["error_code"],
+            )
+            _log_ai_flow(
+                "provider_response_validated",
+                provider="cloudflare-workers-ai",
+                model=self.model_name,
+                screening_ref=reference_hash,
+                view=view,
+                validated=False,
+                inference_performed=provider_trace["inference_performed"],
+                model_output_usable=False,
+                error_code=provider_trace["error_code"],
+            )
+            raise InvalidProviderOutputError(provider_trace) from error
+
+        _log_ai_flow(
+            "provider_json_parsed",
+            provider="cloudflare-workers-ai",
+            model=self.model_name,
+            screening_ref=reference_hash,
+            view=view,
+            parsed=True,
+        )
+        try:
+            validated = validate_ai_result(parsed, view=view, category=selected)
+        except ValueError as error:
+            provider_trace["error_code"] = "MODEL_OUTPUT_INVALID"
+            _log_ai_flow(
+                "provider_response_validated",
+                provider="cloudflare-workers-ai",
+                model=self.model_name,
+                screening_ref=reference_hash,
+                view=view,
+                validated=False,
+                inference_performed=provider_trace["inference_performed"],
+                model_output_usable=False,
+                error_code=provider_trace["error_code"],
+            )
+            raise InvalidProviderOutputError(provider_trace) from error
+
+        provider_trace["provider_response_validated"] = True
+        provider_trace["model_output_usable"] = (
+            validated["model_status"] == "OK"
+            and validated["classification"] != "UNCERTAIN"
+            and all(
+                item["scale"] in {"0", "1", "2", "3"}
+                for item in validated["possible_visual_findings"]
+            )
+        )
+        if not provider_trace["model_output_usable"]:
+            provider_trace["error_code"] = "MODEL_NOT_ASSESSABLE"
+        _log_ai_flow(
+            "provider_response_validated",
+            provider="cloudflare-workers-ai",
+            model=self.model_name,
+            screening_ref=reference_hash,
+            view=view,
+            validated=True,
+            inference_performed=provider_trace["inference_performed"],
+            model_output_usable=provider_trace["model_output_usable"],
+            inference_duration_ms=inference_duration_ms,
+            model_status=validated.get("model_status", "UNKNOWN"),
+            finding_count=len(validated.get("possible_visual_findings") or []),
+        )
+        validated["provider_trace"] = provider_trace
+        return validated

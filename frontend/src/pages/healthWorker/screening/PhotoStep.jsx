@@ -6,6 +6,7 @@ import { useLanguage } from "../../../i18n/LanguageContext";
 import { formatLocalizedNumber, getCodeLabel } from "../../../i18n/displayLabels";
 import { apiMessage } from "../../../i18n/translate";
 import { Alert, Badge, Button } from "../../../components/ui";
+import OralScreeningReport from "../../../components/OralScreeningReport";
 import { captureVideoFrame, inspectImage, validateImageFile } from "./imageTools";
 
 const VIEWS = ["FRONT_VIEW", "LEFT_VIEW", "RIGHT_VIEW"];
@@ -62,7 +63,11 @@ export default function PhotoStep({ screening, maxBytes, photoConsent, onChanged
   const limit = maxBytes || 10 * 1024 * 1024;
   const photoFor = (view) => screening.photos.find((photo) => photo.view === view);
   const photoSignature = useMemo(
-    () => (screening.photos || []).map((photo) => `${photo.id}:${photo.has_ai_enhanced ? 1 : 0}`).join("|"),
+    () => JSON.stringify((screening.photos || []).map((photo) => ({
+      id: photo.id,
+      view: photo.view,
+      hasAiEnhanced: Boolean(photo.has_ai_enhanced),
+    }))),
     [screening.photos]
   );
 
@@ -93,6 +98,7 @@ export default function PhotoStep({ screening, maxBytes, photoConsent, onChanged
   // Saved originals and their AI copies, loaded as private authenticated blobs
   useEffect(() => {
     if (!photoConsent) return undefined;
+    const photos = JSON.parse(photoSignature);
     let active = true;
     const urls = [];
     const load = async (path) => {
@@ -100,17 +106,17 @@ export default function PhotoStep({ screening, maxBytes, photoConsent, onChanged
       urls.push(url);
       return url;
     };
-    setPreviewLoading(Boolean(screening.photos?.length));
+    setPreviewLoading(photos.length > 0);
     setPreviewError("");
     (async () => {
       const originals = {};
       const enhanced = {};
       const failedViews = [];
-      for (const photo of screening.photos || []) {
+      for (const photo of photos) {
         const base = `/screenings/${screening.id}/photos/${photo.id}`;
         try {
           originals[photo.view] = await load(`${base}/file`);
-          if (photo.has_ai_enhanced) enhanced[photo.view] = await load(`${base}/enhanced/file`);
+          if (photo.hasAiEnhanced) enhanced[photo.view] = await load(`${base}/enhanced/file`);
         } catch {
           failedViews.push(photo.view);
         }
@@ -515,6 +521,19 @@ export default function PhotoStep({ screening, maxBytes, photoConsent, onChanged
       await reload();
     } catch (requestError) {
       setError(apiMessage(requestError, "screening.aiAnalysisFailed"));
+      setAnalysisResult({
+        screening_date: screening.screening_date,
+        views: (screening.photos || []).map((photo) => ({
+          photo_id: photo.id,
+          view: photo.view,
+          analysis_status: "FAILED",
+          model_status: "ANALYSIS_FAILED",
+          classification: "UNCERTAIN",
+          possible_visual_findings: [],
+          observations: [],
+          abnormalities: [],
+        })),
+      });
     } finally {
       setAnalyzing(false);
     }
@@ -569,11 +588,18 @@ export default function PhotoStep({ screening, maxBytes, photoConsent, onChanged
   const missing = VIEWS.filter((view) => !photoFor(view));
   const unsaved = VIEWS.filter((view) => selected[view]);
   const uploadable = unsaved.filter((view) => canSaveStaged(selected[view]));
-  const allRequiredReadyToSave = missing.every((view) => canSaveStaged(selected[view]));
+  const allStagedReadyToSave = uploadable.length === unsaved.length;
   const anyBusy = Boolean(uploading)
     || Object.keys(enhancing).length > 0
     || Object.keys(validating).length > 0;
-  const canAnalyze = photoConsent && missing.length === 0 && unsaved.length === 0;
+  const canAnalyze = photoConsent && screening.photos.length > 0 && unsaved.length === 0;
+  const canContinue = !photoConsent
+    || (screening.photos.length > 0 && unsaved.length === 0 && !anyBusy);
+  const reportImages = (analysisResult?.views || []).map((result) => ({
+    ...result,
+    photo_id: result.photo_id || photoFor(result.view)?.id,
+    previewUrl: previews[result.view],
+  }));
   const qualityWarnings = (quality) => (quality?.warnings || [])
     .map((warning) => QUALITY_LABELS[warning])
     .filter(Boolean)
@@ -767,7 +793,7 @@ export default function PhotoStep({ screening, maxBytes, photoConsent, onChanged
               <Button
                 type="button"
                 onClick={() => savePhotos(uploadable)}
-                disabled={anyBusy || !allRequiredReadyToSave || uploadable.length === 0}
+                disabled={anyBusy || !allStagedReadyToSave || uploadable.length === 0}
               >
                 <Upload size={16} /> {t("screening.saveAllPhotos")}
               </Button>
@@ -777,140 +803,15 @@ export default function PhotoStep({ screening, maxBytes, photoConsent, onChanged
           <div className="scr-unsaved">
             <Button type="button" onClick={analyzeScreening} loading={analyzing}
               disabled={!canAnalyze || anyBusy || analyzing}>
-              <Sparkles size={16} /> {t("screening.analyzeImages")}
+              <Sparkles size={16} /> {t(analysisResult ? "screening.retryAnalysis" : "screening.analyzeImages")}
             </Button>
             <p className="scr-quality-disclaimer">{t("screening.aiAnalysisDisclaimer")}</p>
           </div>
           {analysisResult && (
-            <section className="scr-ai-results" aria-label={t("screening.aiAnalysisResults")}>
-              <h3>{t("screening.aiAnalysisResults")}</h3>
-              <p className="scr-quality-disclaimer">{t("screening.aiAnalysisWarning")}</p>
-              {analysisResult.views.map((result) => {
-                const qualityReport = result.image_quality_score || result.image_quality?.score_report;
-                const insufficient = qualityReport?.status === "INSUFFICIENT"
-                  || result.image_quality?.status === "RECAPTURE"
-                  || result.model_status === "NOT_ASSESSABLE"
-                  || result.model_status === "INVALID_OUTPUT";
-                const confidence = result.observation_confidence ?? result.model_confidence;
-                const visualScore = result.visual_health_assessment_score;
-                const visualScoreMessage = result.visual_health_assessment_score_message
-                  || t("screening.visualHealthScoreUnavailable");
-                const scoreReasons = Array.isArray(result.visual_health_assessment_score_reasons)
-                  ? result.visual_health_assessment_score_reasons
-                  : [];
-                const unassessable = Array.isArray(result.visual_health_assessment_unassessable)
-                  ? result.visual_health_assessment_unassessable
-                  : [];
-                return (
-                  <article key={result.view} className={insufficient ? "scr-ai-result-insufficient" : "scr-ai-result-ok"}>
-                    <strong>
-                      {getCodeLabel("photoViews", result.view, language)} · {t(`screening.aiClassifications.${result.classification}`)}
-                    </strong>
-                    {result.selected_category && (
-                      <p>{t("screening.selectedCategory", { category: t(`screening.imageCategories.${result.selected_category}`) })}</p>
-                    )}
-                    {result.model_status && (
-                      <p>
-                        {t("screening.aiModelStatus")}:{" "}
-                        {(() => {
-                          const key = `screening.aiModelStatuses.${result.model_status}`;
-                          const label = t(key);
-                          return label === key ? result.model_status : label;
-                        })()}
-                      </p>
-                    )}
-
-                    <p className="scr-ai-score-line">
-                      <strong>{t("screening.visualHealthAssessmentScore")}:</strong>{" "}
-                      {visualScore == null
-                        ? t("screening.scoreNotAvailable")
-                        : `${formatLocalizedNumber(visualScore, language)}/100`}
-                    </p>
-                    <p className="scr-quality-disclaimer">{visualScoreMessage}</p>
-                    {scoreReasons.length > 0 && (
-                      <ul className="scr-ai-findings">
-                        {scoreReasons.map((item) => (
-                          <li key={`${result.view}-score-${item.feature}`}>
-                            {item.reason || `${item.description || item.feature}: ${item.points}/100`}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    {unassessable.length > 0 && (
-                      <ul className="scr-ai-findings">
-                        {unassessable.map((item) => (
-                          <li key={`${result.view}-na-${item.feature}`}>
-                            {t("screening.unassessableFinding")}: {item.description || item.feature}
-                            {item.appearance ? ` — ${item.appearance}` : ""}
-                            {item.note ? ` — ${item.note}` : ""}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-
-                    <p>{t("screening.aiImageQuality")}: {getCodeLabel("qualityStatuses", result.image_quality.status, language)}</p>
-                    {qualityReport?.status === "INSUFFICIENT" ? (
-                      <p className="scr-ai-score-line">
-                        <strong>{t("screening.imageQualityScore")}:</strong> {qualityReport.label || t("screening.insufficientImageQuality")}
-                        {qualityReport.raw_score != null && (
-                          <> ({t("screening.technicalRawScore")}: {formatLocalizedNumber(qualityReport.raw_score, language)}/100)</>
-                        )}
-                      </p>
-                    ) : qualityReport?.score != null ? (
-                      <p className="scr-ai-score-line">
-                        <strong>{t("screening.imageQualityScore")}:</strong>{" "}
-                        {formatLocalizedNumber(qualityReport.score, language)}/100
-                      </p>
-                    ) : null}
-
-                    {insufficient ? (
-                      <p className="scr-quality-disclaimer">
-                        {result.not_assessable_reason || t("screening.insufficientImageQuality")}
-                      </p>
-                    ) : confidence != null ? (
-                      <p>{t("screening.aiModelConfidence", { value: formatLocalizedNumber(confidence, language) })}</p>
-                    ) : (
-                      <p className="scr-quality-disclaimer">{t("screening.analysisUnavailable")}</p>
-                    )}
-
-                    <h4 className="scr-ai-findings-heading">{t("screening.visualObservations")}</h4>
-                    {Array.isArray(result.possible_visual_findings) && result.possible_visual_findings.length > 0 ? (
-                      <ul className="scr-ai-findings">
-                        {result.possible_visual_findings.map((finding) => {
-                          const featureKey = `screening.aiFeatures.${finding.feature}`;
-                          const scaleKey = `screening.aiScales.${finding.scale}`;
-                          const featureLabel = t(featureKey) === featureKey ? finding.feature : t(featureKey);
-                          const scaleLabel = t(scaleKey) === scaleKey ? finding.scale : t(scaleKey);
-                          return (
-                            <li key={`${result.view}-${finding.feature}`}>
-                              <strong>{featureLabel}</strong>: {scaleLabel}
-                              {finding.note ? ` — ${finding.note}` : ""}
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    ) : (
-                      (result.observations || []).map((observation, index) => (
-                        <p key={`observation-${index}`}>{observation}</p>
-                      ))
-                    )}
-
-                    {result.not_assessable_reason && !insufficient && <p>{result.not_assessable_reason}</p>}
-                    {(result.uncertainty_warnings || []).map((warning) => {
-                      const key = `screening.aiWarnings.${warning}`;
-                      const label = t(key);
-                      return (
-                        <p className="scr-quality-disclaimer" key={warning}>
-                          {label === key ? warning : label}
-                        </p>
-                      );
-                    })}
-                    <p className="scr-quality-disclaimer">{t("screening.visualHealthScoreSafety")}</p>
-                    <p>{t("screening.aiReviewRecommendation")}</p>
-                  </article>
-                );
-              })}
-            </section>
+            <OralScreeningReport
+              photos={reportImages}
+              screeningDate={analysisResult.screening_date || screening.screening_date}
+            />
           )}
         </>
       )}
@@ -944,7 +845,7 @@ export default function PhotoStep({ screening, maxBytes, photoConsent, onChanged
 
       <div className="scr-nav">
         <span />
-        <Button type="button" onClick={onNext} disabled={photoConsent && missing.length > 0}>{t("screening.next")}</Button>
+        <Button type="button" onClick={onNext} disabled={!canContinue}>{t("screening.next")}</Button>
       </div>
     </div>
   );

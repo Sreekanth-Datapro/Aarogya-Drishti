@@ -196,9 +196,8 @@
 }
 
 /* ---------- cards and grids ---------- */
+/* Base columns come from responsive.css (.mo-stat-grid → 1/2/4). Keep gap here. */
 .mo-stat-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(165px, 1fr));
   gap: 12px;
 }
 
@@ -1127,7 +1126,7 @@
 }
 
 /* Phones: rows become cards with labels */
-@media (max-width: 720px) {
+@media (max-width: 767px) {
   .mo-table thead {
     display: none;
   }
@@ -1202,7 +1201,7 @@
 }
 
 /* Tablets */
-@media (min-width: 640px) {
+@media (min-width: 768px) {
   .mo-hero.dashboard-role-banner .dashboard-banner-content {
     flex-direction: row;
     justify-content: space-between;

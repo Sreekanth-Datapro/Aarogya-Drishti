@@ -5,6 +5,9 @@
 //       phase 1: apply/baseline only 001–002; stop before 003 (004+ stay pending)
 //   node scripts/migrate.js --apply --approve-003-promote-bootstrap
 //       execute 003 (requires MIGRATE_APPROVE_003=PROMOTE_BOOTSTRAP), then 004+ in order
+//   node scripts/migrate.js --apply --only-003-promote-bootstrap --approve-003-promote-bootstrap
+//       execute ONLY 003 (requires MIGRATE_APPROVE_003=PROMOTE_BOOTSTRAP and
+//       MIGRATION_TRUSTED_DATABASE_NAME matching current_database()); never 004+
 require("dotenv").config({ quiet: true });
 
 const { Client } = require("pg");
@@ -18,10 +21,24 @@ async function main() {
   const approve003PromoteBootstrap = process.argv.includes(
     "--approve-003-promote-bootstrap"
   );
+  const only003PromoteBootstrap = process.argv.includes(
+    "--only-003-promote-bootstrap"
+  );
 
   if (defer003 && approve003PromoteBootstrap) {
     throw new Error(
       "Use either --defer-003 or --approve-003-promote-bootstrap, not both."
+    );
+  }
+  if (defer003 && only003PromoteBootstrap) {
+    throw new Error(
+      "Use either --defer-003 or --only-003-promote-bootstrap, not both."
+    );
+  }
+  if (only003PromoteBootstrap && !approve003PromoteBootstrap) {
+    throw new Error(
+      "--only-003-promote-bootstrap requires --approve-003-promote-bootstrap " +
+        "and MIGRATE_APPROVE_003=PROMOTE_BOOTSTRAP."
     );
   }
 
@@ -60,10 +77,12 @@ async function main() {
       apply: true,
       defer003,
       approve003PromoteBootstrap,
+      only003PromoteBootstrap,
       context: {
         bootstrapUsername: config.systemAdmin.username,
         defer003,
         approve003PromoteBootstrap,
+        only003PromoteBootstrap,
       },
     });
     console.log(results.length ? "Done." : "Nothing to apply.");

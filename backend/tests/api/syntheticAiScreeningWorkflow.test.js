@@ -37,7 +37,7 @@ const MEDICAL_OFFICER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const PATIENT_ID = "22222222-2222-4222-8222-222222222222";
 const SCREENING_ID = "33333333-3333-4333-8333-333333333333";
 const MODEL_ID = 3;
-const MODEL_VERSION = "gemma4:31b-cloud";
+const MODEL_VERSION = "@cf/meta/llama-3.2-11b-vision-instruct";
 const VIEWS = ["FRONT_VIEW", "LEFT_VIEW", "RIGHT_VIEW"];
 const originalImages = new Map(VIEWS.map((view) => [
   view,
@@ -76,14 +76,33 @@ function makeAnalysisView(view) {
   return {
     view,
     screening_reference: SCREENING_ID,
+    analysis_status: "FAILED",
+    analyzed_at: "2026-11-19T10:00:00.000Z",
+    error_code: "MODEL_NOT_ASSESSABLE",
+    selected_category: "MOUTH",
+    model_status: "NOT_ASSESSABLE",
     classification: "UNCERTAIN",
     model_confidence: null,
     confidence_meaning: "Model confidence only; it is not a disease probability.",
-    observations: ["No automated observation is available for this synthetic image."],
+    observations: [],
     abnormalities: [],
+    possible_visual_findings: [],
     recommendation: "A Medical Officer must review the original images and clinical findings.",
     image_quality: { status: "ACCEPTABLE", warnings: [], metrics: { width: 1200, height: 900 } },
-    model_information: { provider: "ollama-cloud", model_version: MODEL_VERSION, inference_performed: true },
+    model_information: {
+      provider: "cloudflare-workers-ai",
+      model_version: MODEL_VERSION,
+      trained_oral_model: false,
+      validation_status: "NOT_VALIDATED",
+      provider_request_started: true,
+      provider_request_success: true,
+      provider_response_received: true,
+      provider_http_status: 200,
+      provider_response_validated: true,
+      inference_performed: true,
+      model_output_usable: false,
+      error_code: "MODEL_NOT_ASSESSABLE",
+    },
     uncertainty_warnings: ["CLINICIAN_REVIEW_REQUIRED"],
     review_status: "PENDING_MEDICAL_OFFICER_REVIEW",
   };
@@ -95,13 +114,12 @@ function assessmentRow(values, index) {
     screening_id: values[0],
     photo_id: values[1],
     ai_model_id: values[2],
-    status: "COMPLETED",
-    result_label: values[3],
-    image_quality_status: values[4],
-    score: values[5],
+    status: values[4],
+    result_label: values[5],
+    image_quality_status: values[6],
     analysis_details: JSON.parse(values[7]),
-    requested_by: values[7],
-    model_provider: "ollama-cloud",
+    requested_by: values[8],
+    model_provider: "cloudflare-workers-ai",
     model_version: MODEL_VERSION,
     warning: null,
     completed_at: "2026-11-08T08:31:00Z",
@@ -138,7 +156,7 @@ beforeEach(() => {
         ai_status: "COMPLETED",
         ai_warning: null,
         ai_score: null,
-        ai_model_provider: "ollama-cloud",
+        ai_model_provider: "cloudflare-workers-ai",
         ai_model_version: MODEL_VERSION,
         ai_analysis_details: savedAssessments.find((assessment) => assessment.photo_id === photo.id)?.analysis_details,
       })) };
@@ -147,7 +165,7 @@ beforeEach(() => {
       return {
         rows: [{
           id: MODEL_ID,
-          provider: "ollama-cloud",
+          provider: "cloudflare-workers-ai",
           model_version: MODEL_VERSION,
           is_active: true,
           is_research_only: true,
@@ -195,8 +213,9 @@ beforeEach(() => {
       return new Response(JSON.stringify({
         status: "healthy",
         model_information: {
-          provider: "ollama-cloud",
+          provider: "cloudflare-workers-ai",
           model_version: MODEL_VERSION,
+          validation_status: "NOT_VALIDATED",
           model_type: "cloud_vision",
           trained_oral_model: false,
           validation_status: "NOT_VALIDATED",
@@ -207,7 +226,11 @@ beforeEach(() => {
       status: "success",
       analysis: {
         screening_reference: SCREENING_ID,
-        model_information: { provider: "ollama-cloud", model_version: MODEL_VERSION },
+        model_information: {
+          provider: "cloudflare-workers-ai",
+          model_version: MODEL_VERSION,
+          validation_status: "NOT_VALIDATED",
+        },
         views: VIEWS.map(makeAnalysisView),
         review_status: "PENDING_MEDICAL_OFFICER_REVIEW",
         disclaimer: "Preliminary visual screening support only; not a diagnosis.",
@@ -254,6 +277,11 @@ test("completes synthetic three-view analysis and makes advisory results and ori
     result.analysis_details.disclaimer.toLowerCase().includes("not a diagnosis")
     && result.analysis_details.review_status === "PENDING_MEDICAL_OFFICER_REVIEW"
   ))).toBe(true);
+  const latestCaseAssessmentQuery = mockPool.query.mock.calls
+    .find(([sql]) => sql.includes("DISTINCT ON (photo_id)"));
+  expect(latestCaseAssessmentQuery[0]).toMatch(
+    /ORDER BY photo_id, requested_at DESC, attempt_no DESC, id DESC/
+  );
 
   const listedImages = await imageService.listImages(
     MEDICAL_OFFICER_ID,
@@ -261,6 +289,11 @@ test("completes synthetic three-view analysis and makes advisory results and ori
     PATIENT_ID
   );
   expect(listedImages).toHaveLength(3);
+  const latestImageAssessmentQuery = mockPool.query.mock.calls
+    .find(([sql]) => sql.includes("LEFT JOIN LATERAL") && sql.includes("FROM tbl_ai_assessments a"));
+  expect(latestImageAssessmentQuery[0]).toMatch(
+    /ORDER BY a\.requested_at DESC, a\.attempt_no DESC, a\.id DESC/
+  );
   expect(JSON.stringify(listedImages)).not.toContain("private_key");
   const originalPhoto = await imageService.getImageFile(
     MEDICAL_OFFICER_ID,

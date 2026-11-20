@@ -716,10 +716,9 @@ describe("submit", () => {
     for (const view of service.PHOTO_VIEWS) await service.uploadPhoto(USER, req, SCREENING, view, await fileOf());
   };
 
-  test("with photograph consent, all three views are required", async () => {
+  test("with photograph consent, one photo is enough to submit", async () => {
     await service.uploadPhoto(USER, req, SCREENING, "FRONT_VIEW", await fileOf());
-    await expect(service.submitScreening(USER, req, SCREENING)).rejects.toMatchObject({ status: 400, code: "PHOTOS_REQUIRED" });
-    expect(mockState.screening.case_state).toBe("CONSENTED");
+    await expect(service.submitScreening(USER, req, SCREENING)).resolves.toMatchObject({ case_state: "AWAITING_CLINICIAN" });
   });
 
   test("a complete screening moves CONSENTED -> SCREENED -> AWAITING_CLINICIAN (Medical Officer queue)", async () => {

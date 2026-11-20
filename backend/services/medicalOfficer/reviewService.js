@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const pool = require("../../db");
 const HttpError = require("../../utils/httpError");
 const { audit } = require("../../utils/audit");
+const { stripScoreFields } = require("../../utils/screeningAiPresentation");
 const { activeScreeningOrder } = require("../../utils/screeningSelection");
 const {
   hasConsent,
@@ -173,12 +174,13 @@ async function getCaseContext(userId, req, patientId) {
   let findings = [];
   let histories = [];
   let aiResults = [];
+  let screeningPhotos = [];
   let review = null;
   let screeningDetails = null;
 
   if (screening && screeningConsent) {
     screeningDetails = screening;
-    const [findingRows, historyRows, aiRows, reviewRow] = await Promise.all([
+    const [findingRows, historyRows, aiRows, photoRows, reviewRow] = await Promise.all([
       pool.query(
         `SELECT f.id, f.finding_kind::text AS finding_kind, f.oral_site::text AS oral_site,
                 f.description, f.duration_days, f.recorded_at,
@@ -200,27 +202,46 @@ async function getCaseContext(userId, req, patientId) {
         [patientId]
       ),
       imageConsent ? pool.query(
-        `SELECT id, photo_id, status, result_label, image_quality_status, score,
+        `SELECT id, photo_id, status, result_label, image_quality_status,
                 warning, model_provider, model_version, analysis_details, completed_at
            FROM (
              SELECT DISTINCT ON (photo_id)
                     id, photo_id, status::text AS status,
                     result_label::text AS result_label,
                     image_quality_status::text AS image_quality_status,
-                    score, warning, model_provider, model_version,
-                    analysis_details, completed_at, requested_at
+                    warning, model_provider, model_version,
+                    analysis_details, completed_at, requested_at, attempt_no
                FROM tbl_ai_assessments
               WHERE screening_id = $1
-              ORDER BY photo_id, requested_at DESC
+              ORDER BY photo_id, requested_at DESC, attempt_no DESC, id DESC
            ) latest
-          ORDER BY requested_at DESC`,
+          ORDER BY requested_at DESC, attempt_no DESC, id DESC`,
+        [screening.id]
+      ) : Promise.resolve({ rows: [] }),
+      imageConsent ? pool.query(
+        `SELECT ph.id, ph.annotation_site::text AS view, ph.captured_at,
+                quality.status::text AS image_quality_status
+           FROM tbl_screening_photos ph
+           LEFT JOIN LATERAL (
+             SELECT q.status
+               FROM tbl_image_quality_results q
+              WHERE q.photo_id = ph.id
+              ORDER BY q.checked_at DESC
+              LIMIT 1
+           ) quality ON TRUE
+          WHERE ph.screening_id = $1 AND ph.status <> 'SUPERSEDED'
+          ORDER BY ph.captured_at, ph.id`,
         [screening.id]
       ) : Promise.resolve({ rows: [] }),
       reviewForScreening(pool, screening.id),
     ]);
     findings = findingRows.rows;
     histories = historyRows.rows;
-    aiResults = aiRows.rows;
+    aiResults = aiRows.rows.map((row) => ({
+      ...row,
+      analysis_details: stripScoreFields(row.analysis_details),
+    }));
+    screeningPhotos = photoRows.rows;
     review = reviewRow;
   }
 
@@ -268,6 +289,7 @@ async function getCaseContext(userId, req, patientId) {
     findings,
     histories,
     ai_results: aiResults,
+    photos: screeningPhotos,
     review,
     timeline: timeline.rows,
   };

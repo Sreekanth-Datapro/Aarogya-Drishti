@@ -1,0 +1,8 @@
+(() => {
+  const p = {"accessToken":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI5NDk4YWNjOC0wYWFjLTQ2NDktYTY0My1jODM3MjdiOWNkNmIiLCJzaWQiOiI2OTU0Y2FlNi05MWVkLTQzZDYtODc3Yi0xYjk3MGYzN2YxZDAiLCJyb2xlX2lkIjoiMSIsInJvbGUiOiJIRUFMVEhfV09SS0VSIiwiaWF0IjoxNzk0OTc3NDY2LCJleHAiOjE3OTQ5NzgzNjYsImF1ZCI6ImFhcm9neWEtZHJpc2h0aS11c2VycyIsImlzcyI6ImFhcm9neWEtZHJpc2h0aSJ9.a4eMWt4rUulN18rsAJ4DM1DnKzy7m_RkqtYwBaO9BBw","user":{"id":"9498acc8-0aac-4649-a643-c83727b9cd6b","username":"qa.voice.hw","full_name":"QA Voice Health Worker","phone":null,"email":"qa.voice.hw@example.local","designation":null,"role_id":"1","role":"HEALTH_WORKER","role_display_name":"Village health worker","must_change_password":false,"mfa_enabled":false,"permissions":["ai.analyze","care.discomfort_report","care.followup_report","consent.record","diagnostic.followup","diagnostic.patient_followup","diagnostic.report_upload","diagnostic.view","image.upload","image.view","page.followUp","page.healthWorkerAppointments","page.healthWorkerDiagnostics","page.healthWorkerPatients","page.healthWorkerPatientSearch","page.healthWorkerTracking","page.screening","patient.read_assigned","patient.register","screening.create","video.join"]}};
+  sessionStorage.setItem("accessToken", p.accessToken);
+  sessionStorage.setItem("user", JSON.stringify(p.user));
+  sessionStorage.setItem("authMode", "online");
+  location.href = "/dashboard";
+  return "ok";
+})()

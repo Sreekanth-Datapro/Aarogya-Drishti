@@ -116,7 +116,7 @@ export default function MoDashboard() {
       {error && <Alert type="error">{tm(error)}</Alert>}
 
       <section className="mo-analytics-band" aria-label={t("mo.analyticsTitle")}>
-        <div className="mo-stat-grid mo-stat-grid-animated">
+        <div className="mo-stat-grid resp-stat-grid mo-stat-grid-animated">
           <StatCard icon={Users} label={t("mo.totalPatients")} value={number(totals.total_patients)} />
           <StatCard icon={ClipboardList} tone="amber" label={t("mo.pendingScreenings")} value={number(totals.pending_screenings)} hint={t("mo.pendingScreeningsHint")} />
           <StatCard icon={UserCheck} tone="blue" label={t("mo.claimedCases")} value={number(totals.my_claimed_cases)} />

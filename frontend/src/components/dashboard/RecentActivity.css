@@ -470,6 +470,12 @@
 
 @media (max-width: 600px) {
   .bottom-cards-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 359px) {
+  .bottom-cards-row {
     grid-template-columns: 1fr;
   }
 }

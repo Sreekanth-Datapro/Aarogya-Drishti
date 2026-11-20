@@ -3,6 +3,7 @@ const HttpError = require("../../utils/httpError");
 const { audit } = require("../../utils/audit");
 const { requireActiveClaim, requireConsent, requireUuid } = require("./scope");
 const privateImageStorage = require("../privateImageStorage");
+const { stripScoreFields } = require("../../utils/screeningAiPresentation");
 
 // ==========================================
 // ORAL IMAGE REVIEW
@@ -21,7 +22,7 @@ async function listImages(userId, req, patientId) {
             ph.supersedes_photo_id,
             quality.status::text AS quality_status, quality.reason AS quality_reason,
             ai.result_label::text AS ai_result_label, ai.status::text AS ai_status, ai.warning AS ai_warning,
-            ai.score AS ai_score, ai.model_provider AS ai_model_provider,
+            ai.model_provider AS ai_model_provider,
             ai.model_version AS ai_model_version, ai.analysis_details AS ai_analysis_details,
             EXISTS (
               SELECT 1 FROM tbl_audit_logs enhanced
@@ -37,10 +38,12 @@ async function listImages(userId, req, patientId) {
           WHERE q.photo_id = ph.id ORDER BY q.checked_at DESC LIMIT 1
        ) quality ON TRUE
        LEFT JOIN LATERAL (
-         SELECT a.result_label, a.status, a.warning, a.score, a.model_provider,
+         SELECT a.result_label, a.status, a.warning, a.model_provider,
                 a.model_version, a.analysis_details
            FROM tbl_ai_assessments a
-          WHERE a.photo_id = ph.id ORDER BY a.requested_at DESC LIMIT 1
+          WHERE a.photo_id = ph.id
+          ORDER BY a.requested_at DESC, a.attempt_no DESC, a.id DESC
+          LIMIT 1
        ) ai ON TRUE
       WHERE ph.patient_id = $1
       ORDER BY s.screening_date DESC, ph.captured_at DESC`,
@@ -59,6 +62,7 @@ async function listImages(userId, req, patientId) {
     const enhancedAvailable = await privateImageStorage.objectExists(enhancedFilePath(row.screening_id, row.id));
     return {
       ...row,
+      ai_analysis_details: stripScoreFields(row.ai_analysis_details),
       size_bytes: Number(row.size_bytes),
       enhancement_status: enhancedAvailable
         ? "AVAILABLE"

@@ -1,9 +1,21 @@
-import React, { useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
+import { flushSync } from "react-dom";
 import api from "../../../services/api";
 import { useLanguage } from "../../../i18n/LanguageContext";
 import { getCodeLabel, getLocalizedMasterName } from "../../../i18n/displayLabels";
 import { apiMessage } from "../../../i18n/translate";
 import { Alert, Button } from "../../../components/ui";
+import {
+  applyScreeningVoiceUpdates,
+  buildScreeningVoiceForm,
+} from "../../../voice/adapters/patientScreening";
+import {
+  buildScreeningQuestions,
+  parseScreeningAnswer,
+  screeningAnswersToUpdates,
+} from "../../../voice/receptionistScripts";
+import useRegisterVoiceWorkflow from "../../../voice/global/useRegisterVoiceWorkflow";
+import VoiceWorkflowStart from "../../../voice/global/VoiceWorkflowStart";
 
 const EMPTY_PAIN = { has_pain: false, severity: "", location: "", duration_days: "", notes: "" };
 
@@ -51,6 +63,7 @@ export default function ScreeningFormStep({ patient, options, screening, onBack,
   const { t, tm, language } = useLanguage();
   const requestedInfoUpdate = screening?.case_state === "SCREENED"
     && screening.medical_officer_decision === "REQUEST_MORE_INFO";
+  const historyLocked = requestedInfoUpdate;
   const initial = initialValues(screening);
   const [chiefComplaint, setChiefComplaint] = useState(initial.chiefComplaint);
   const [symptoms, setSymptoms] = useState(initial.symptoms);        // { CODE: { duration_days } }
@@ -61,6 +74,151 @@ export default function ScreeningFormStep({ patient, options, screening, onBack,
   const [notes, setNotes] = useState(initial.notes);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  const voiceForm = useMemo(() => buildScreeningVoiceForm({
+    chiefComplaint,
+    symptoms,
+    exposures,
+    conditions,
+    pain,
+    notes,
+  }), [chiefComplaint, symptoms, exposures, conditions, pain, notes]);
+
+  const screeningQuestions = useMemo(
+    () => buildScreeningQuestions({ historyLocked }),
+    [historyLocked],
+  );
+
+  const receptionistParseContext = useMemo(() => ({
+    form: voiceForm,
+    symptoms: options?.symptoms || [],
+    exposures: options?.exposures || [],
+    historyLocked,
+    language,
+  }), [voiceForm, options, historyLocked, language]);
+
+  const applyReceptionistAnswers = useCallback((payload) => {
+    const { updates, clearSymptoms, clearExposures } = screeningAnswersToUpdates(payload.answers);
+    const base = {
+      chiefComplaint,
+      symptoms: clearSymptoms ? {} : symptoms,
+      exposures: clearExposures ? {} : exposures,
+      conditions,
+      pain,
+      notes,
+    };
+    const next = applyScreeningVoiceUpdates(base, updates);
+    setChiefComplaint(next.chiefComplaint);
+    setSymptoms(next.symptoms);
+    setExposures(next.exposures);
+    setConditions(next.conditions);
+    setPain(next.pain);
+    setNotes(next.notes);
+    return next;
+  }, [chiefComplaint, symptoms, exposures, conditions, pain, notes]);
+
+  const handleReceptionistFieldAccepted = useCallback((partial) => {
+    applyReceptionistAnswers({ answers: partial.answers || {} });
+  }, [applyReceptionistAnswers]);
+
+  /** Returns { ok, error?, code? } — success UI only when API confirms. */
+  const handleReceptionistSubmit = useCallback(async (payload) => {
+    let next;
+    flushSync(() => {
+      next = applyReceptionistAnswers(payload);
+    });
+    if (!next?.chiefComplaint?.trim()) {
+      const error = t("screening.chiefComplaintMissing");
+      setError(error);
+      return { ok: false, error, code: "VALIDATION" };
+    }
+    // Pain score remains clinician-entered; voice only captures has_pain / location / duration.
+    setSaving(true);
+    setError("");
+    const exposureList = Object.entries(next.exposures || {}).map(([code, item]) => ({ code, ...item }));
+    const tobaccoCodes = new Set((options.exposures || []).filter((item) => item.category === "TOBACCO").map((item) => item.code));
+    const body = {
+      patient_id: patient.id,
+      chief_complaint: next.chiefComplaint.trim(),
+      symptoms: Object.entries(next.symptoms || {}).map(([code, item]) => ({ code, duration_days: item.duration_days })),
+      medical_history: historyLocked
+        ? { exposures: [], conditions: null }
+        : { exposures: exposureList, conditions: (next.conditions || "").trim() || null },
+      tobacco_current: historyLocked
+        ? screening.tobacco_current === true
+        : exposureList.some((item) => tobaccoCodes.has(item.code) && item.is_current),
+      oral_observations: Object.entries(observations).map(([site, item]) => ({ site, description: item.description.trim() })),
+      pain: next.pain,
+      notes: (next.notes || "").trim() || null,
+    };
+    try {
+      if (historyLocked) {
+        if (next.pain?.has_pain && next.pain.severity === "") {
+          const error = t("screening.painScoreMissing");
+          setError(error);
+          return { ok: false, error, code: "VALIDATION" };
+        }
+        const response = await api.put(`/screenings/${screening.id}/requested-information`, body);
+        await onUpdated(response.data.screening);
+        return { ok: true };
+      }
+
+      if (next.pain?.has_pain && next.pain.severity === "") {
+        const error = t("screening.painScoreMissing");
+        setError(error);
+        return { ok: false, error, code: "VALIDATION" };
+      }
+      if (Object.values(observations).some((item) => !item.description?.trim())) {
+        const error = t("screening.observationMissing");
+        setError(error);
+        return { ok: false, error, code: "VALIDATION" };
+      }
+      const response = await api.post("/screenings", body);
+      await onCreated(response.data.screening);
+      return { ok: true };
+    } catch (requestError) {
+      const error = apiMessage(requestError, "screening.saveFailed");
+      setError(error);
+      const status = requestError?.response?.status;
+      const code = !requestError?.response ? "NETWORK" : (status >= 500 ? "SERVER" : "API");
+      return { ok: false, error: typeof error === "string" ? error : t("screening.saveFailed"), code };
+    } finally {
+      setSaving(false);
+    }
+  }, [
+    applyReceptionistAnswers,
+    historyLocked,
+    observations,
+    onCreated,
+    onUpdated,
+    options,
+    patient.id,
+    screening,
+    t,
+  ]);
+
+  const screeningVoiceConfig = useMemo(() => ({
+    id: "screening",
+    mode: "screening",
+    startLabel: "Start Screening by Voice",
+    title: "Oral Screening",
+    questions: screeningQuestions,
+    parseAnswer: parseScreeningAnswer,
+    parseContext: receptionistParseContext,
+    onFieldAccepted: handleReceptionistFieldAccepted,
+    onApplyAnswers: applyReceptionistAnswers,
+    onRequestSubmit: handleReceptionistSubmit,
+    disabled: saving,
+  }), [
+    screeningQuestions,
+    receptionistParseContext,
+    handleReceptionistFieldAccepted,
+    applyReceptionistAnswers,
+    handleReceptionistSubmit,
+    saving,
+  ]);
+
+  useRegisterVoiceWorkflow(screeningVoiceConfig);
 
   // Tick / untick an item of a checklist
   const toggle = (setter, code, empty) => setter((current) => {
@@ -161,6 +319,11 @@ export default function ScreeningFormStep({ patient, options, screening, onBack,
           ))}
         </div>
       </fieldset>
+
+      <VoiceWorkflowStart
+        label="Start Screening by Voice"
+        disabled={saving}
+      />
 
       {requestedInfoUpdate ? (
         <Alert type="info">{t("screening.patientHistoryUnchanged")}</Alert>

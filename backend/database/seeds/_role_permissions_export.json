@@ -1,0 +1,762 @@
+{
+  "roles": [
+    {
+      "code": "HEALTH_WORKER",
+      "is_active": true,
+      "mfa_required": false,
+      "is_system_role": true
+    },
+    {
+      "code": "MEDICAL_OFFICER",
+      "is_active": true,
+      "mfa_required": true,
+      "is_system_role": true
+    },
+    {
+      "code": "SPECIALIST",
+      "is_active": true,
+      "mfa_required": true,
+      "is_system_role": true
+    },
+    {
+      "code": "NAVIGATOR",
+      "is_active": true,
+      "mfa_required": false,
+      "is_system_role": true
+    },
+    {
+      "code": "HOSPITAL_STAFF",
+      "is_active": true,
+      "mfa_required": false,
+      "is_system_role": true
+    },
+    {
+      "code": "DISTRICT_ADMIN",
+      "is_active": true,
+      "mfa_required": true,
+      "is_system_role": true
+    },
+    {
+      "code": "SYSTEM_ADMIN",
+      "is_active": false,
+      "mfa_required": true,
+      "is_system_role": true
+    },
+    {
+      "code": "SUPER_ADMIN",
+      "is_active": true,
+      "mfa_required": true,
+      "is_system_role": true
+    }
+  ],
+  "pairs": [
+    {
+      "role_code": "DISTRICT_ADMIN",
+      "permission_code": "dashboard.view_aggregate"
+    },
+    {
+      "role_code": "DISTRICT_ADMIN",
+      "permission_code": "export.aggregate"
+    },
+    {
+      "role_code": "DISTRICT_ADMIN",
+      "permission_code": "master.view"
+    },
+    {
+      "role_code": "DISTRICT_ADMIN",
+      "permission_code": "page.districtAuditLogs"
+    },
+    {
+      "role_code": "DISTRICT_ADMIN",
+      "permission_code": "page.districtCustomAccounts"
+    },
+    {
+      "role_code": "DISTRICT_ADMIN",
+      "permission_code": "page.districtFacilities"
+    },
+    {
+      "role_code": "DISTRICT_ADMIN",
+      "permission_code": "page.districtHealthWorkers"
+    },
+    {
+      "role_code": "DISTRICT_ADMIN",
+      "permission_code": "page.districtHospitalStaff"
+    },
+    {
+      "role_code": "DISTRICT_ADMIN",
+      "permission_code": "page.districtLocations"
+    },
+    {
+      "role_code": "DISTRICT_ADMIN",
+      "permission_code": "page.districtMedicalOfficers"
+    },
+    {
+      "role_code": "DISTRICT_ADMIN",
+      "permission_code": "page.districtNavigators"
+    },
+    {
+      "role_code": "DISTRICT_ADMIN",
+      "permission_code": "page.districtPatients"
+    },
+    {
+      "role_code": "DISTRICT_ADMIN",
+      "permission_code": "page.districtProgramme"
+    },
+    {
+      "role_code": "DISTRICT_ADMIN",
+      "permission_code": "page.districtRegistrations"
+    },
+    {
+      "role_code": "DISTRICT_ADMIN",
+      "permission_code": "page.districtReports"
+    },
+    {
+      "role_code": "DISTRICT_ADMIN",
+      "permission_code": "page.districtSpecialists"
+    },
+    {
+      "role_code": "DISTRICT_ADMIN",
+      "permission_code": "page.districtTracking"
+    },
+    {
+      "role_code": "DISTRICT_ADMIN",
+      "permission_code": "page.facilities"
+    },
+    {
+      "role_code": "DISTRICT_ADMIN",
+      "permission_code": "page.healthWorkerAssignments"
+    },
+    {
+      "role_code": "DISTRICT_ADMIN",
+      "permission_code": "registration.finalize"
+    },
+    {
+      "role_code": "DISTRICT_ADMIN",
+      "permission_code": "registration.monitor"
+    },
+    {
+      "role_code": "HEALTH_WORKER",
+      "permission_code": "ai.analyze"
+    },
+    {
+      "role_code": "HEALTH_WORKER",
+      "permission_code": "care.discomfort_report"
+    },
+    {
+      "role_code": "HEALTH_WORKER",
+      "permission_code": "care.followup_report"
+    },
+    {
+      "role_code": "HEALTH_WORKER",
+      "permission_code": "consent.record"
+    },
+    {
+      "role_code": "HEALTH_WORKER",
+      "permission_code": "diagnostic.followup"
+    },
+    {
+      "role_code": "HEALTH_WORKER",
+      "permission_code": "diagnostic.patient_followup"
+    },
+    {
+      "role_code": "HEALTH_WORKER",
+      "permission_code": "diagnostic.report_upload"
+    },
+    {
+      "role_code": "HEALTH_WORKER",
+      "permission_code": "diagnostic.view"
+    },
+    {
+      "role_code": "HEALTH_WORKER",
+      "permission_code": "image.upload"
+    },
+    {
+      "role_code": "HEALTH_WORKER",
+      "permission_code": "image.view"
+    },
+    {
+      "role_code": "HEALTH_WORKER",
+      "permission_code": "page.followUp"
+    },
+    {
+      "role_code": "HEALTH_WORKER",
+      "permission_code": "page.healthWorkerAppointments"
+    },
+    {
+      "role_code": "HEALTH_WORKER",
+      "permission_code": "page.healthWorkerDiagnostics"
+    },
+    {
+      "role_code": "HEALTH_WORKER",
+      "permission_code": "page.healthWorkerPatients"
+    },
+    {
+      "role_code": "HEALTH_WORKER",
+      "permission_code": "page.healthWorkerPatientSearch"
+    },
+    {
+      "role_code": "HEALTH_WORKER",
+      "permission_code": "page.healthWorkerTracking"
+    },
+    {
+      "role_code": "HEALTH_WORKER",
+      "permission_code": "page.screening"
+    },
+    {
+      "role_code": "HEALTH_WORKER",
+      "permission_code": "patient.read_assigned"
+    },
+    {
+      "role_code": "HEALTH_WORKER",
+      "permission_code": "patient.register"
+    },
+    {
+      "role_code": "HEALTH_WORKER",
+      "permission_code": "screening.create"
+    },
+    {
+      "role_code": "HEALTH_WORKER",
+      "permission_code": "video.join"
+    },
+    {
+      "role_code": "HOSPITAL_STAFF",
+      "permission_code": "appointment.confirm"
+    },
+    {
+      "role_code": "HOSPITAL_STAFF",
+      "permission_code": "appointment.view"
+    },
+    {
+      "role_code": "HOSPITAL_STAFF",
+      "permission_code": "diagnostic.confirm"
+    },
+    {
+      "role_code": "HOSPITAL_STAFF",
+      "permission_code": "diagnostic.report_upload"
+    },
+    {
+      "role_code": "HOSPITAL_STAFF",
+      "permission_code": "diagnostic.route_specialist"
+    },
+    {
+      "role_code": "HOSPITAL_STAFF",
+      "permission_code": "diagnostic.view"
+    },
+    {
+      "role_code": "HOSPITAL_STAFF",
+      "permission_code": "page.appointments"
+    },
+    {
+      "role_code": "HOSPITAL_STAFF",
+      "permission_code": "page.attendance"
+    },
+    {
+      "role_code": "HOSPITAL_STAFF",
+      "permission_code": "page.hsDiagnostics"
+    },
+    {
+      "role_code": "HOSPITAL_STAFF",
+      "permission_code": "page.hsTracking"
+    },
+    {
+      "role_code": "HOSPITAL_STAFF",
+      "permission_code": "patient.read_assigned"
+    },
+    {
+      "role_code": "HOSPITAL_STAFF",
+      "permission_code": "referral.view"
+    },
+    {
+      "role_code": "MEDICAL_OFFICER",
+      "permission_code": "appointment.book"
+    },
+    {
+      "role_code": "MEDICAL_OFFICER",
+      "permission_code": "appointment.view"
+    },
+    {
+      "role_code": "MEDICAL_OFFICER",
+      "permission_code": "care.close"
+    },
+    {
+      "role_code": "MEDICAL_OFFICER",
+      "permission_code": "care.final_review"
+    },
+    {
+      "role_code": "MEDICAL_OFFICER",
+      "permission_code": "care.followup_assign"
+    },
+    {
+      "role_code": "MEDICAL_OFFICER",
+      "permission_code": "care.plan_manage"
+    },
+    {
+      "role_code": "MEDICAL_OFFICER",
+      "permission_code": "case.assign"
+    },
+    {
+      "role_code": "MEDICAL_OFFICER",
+      "permission_code": "classification.set"
+    },
+    {
+      "role_code": "MEDICAL_OFFICER",
+      "permission_code": "consent.record"
+    },
+    {
+      "role_code": "MEDICAL_OFFICER",
+      "permission_code": "diagnostic.report_review"
+    },
+    {
+      "role_code": "MEDICAL_OFFICER",
+      "permission_code": "diagnostic.view"
+    },
+    {
+      "role_code": "MEDICAL_OFFICER",
+      "permission_code": "image.view"
+    },
+    {
+      "role_code": "MEDICAL_OFFICER",
+      "permission_code": "investigation.record"
+    },
+    {
+      "role_code": "MEDICAL_OFFICER",
+      "permission_code": "page.moCareLifecycle"
+    },
+    {
+      "role_code": "MEDICAL_OFFICER",
+      "permission_code": "page.moClinicalNotes"
+    },
+    {
+      "role_code": "MEDICAL_OFFICER",
+      "permission_code": "page.moClinicalReview"
+    },
+    {
+      "role_code": "MEDICAL_OFFICER",
+      "permission_code": "page.moDiagnostics"
+    },
+    {
+      "role_code": "MEDICAL_OFFICER",
+      "permission_code": "page.moFollowUp"
+    },
+    {
+      "role_code": "MEDICAL_OFFICER",
+      "permission_code": "page.moImageReview"
+    },
+    {
+      "role_code": "MEDICAL_OFFICER",
+      "permission_code": "page.moMandalPatients"
+    },
+    {
+      "role_code": "MEDICAL_OFFICER",
+      "permission_code": "page.moProfile"
+    },
+    {
+      "role_code": "MEDICAL_OFFICER",
+      "permission_code": "page.moReferrals"
+    },
+    {
+      "role_code": "MEDICAL_OFFICER",
+      "permission_code": "page.moRegistrations"
+    },
+    {
+      "role_code": "MEDICAL_OFFICER",
+      "permission_code": "page.moReports"
+    },
+    {
+      "role_code": "MEDICAL_OFFICER",
+      "permission_code": "page.moScreeningQueue"
+    },
+    {
+      "role_code": "MEDICAL_OFFICER",
+      "permission_code": "page.moTracking"
+    },
+    {
+      "role_code": "MEDICAL_OFFICER",
+      "permission_code": "patient.read_assigned"
+    },
+    {
+      "role_code": "MEDICAL_OFFICER",
+      "permission_code": "patient.register"
+    },
+    {
+      "role_code": "MEDICAL_OFFICER",
+      "permission_code": "referral.create"
+    },
+    {
+      "role_code": "MEDICAL_OFFICER",
+      "permission_code": "referral.view"
+    },
+    {
+      "role_code": "MEDICAL_OFFICER",
+      "permission_code": "registration.monitor"
+    },
+    {
+      "role_code": "MEDICAL_OFFICER",
+      "permission_code": "registration.recommend"
+    },
+    {
+      "role_code": "MEDICAL_OFFICER",
+      "permission_code": "review.create"
+    },
+    {
+      "role_code": "MEDICAL_OFFICER",
+      "permission_code": "review.sign"
+    },
+    {
+      "role_code": "MEDICAL_OFFICER",
+      "permission_code": "video.join"
+    },
+    {
+      "role_code": "NAVIGATOR",
+      "permission_code": "appointment.book"
+    },
+    {
+      "role_code": "NAVIGATOR",
+      "permission_code": "appointment.view"
+    },
+    {
+      "role_code": "NAVIGATOR",
+      "permission_code": "care.followup_assign"
+    },
+    {
+      "role_code": "NAVIGATOR",
+      "permission_code": "diagnostic.advice_forward"
+    },
+    {
+      "role_code": "NAVIGATOR",
+      "permission_code": "diagnostic.assign_hw"
+    },
+    {
+      "role_code": "NAVIGATOR",
+      "permission_code": "diagnostic.followup_verify"
+    },
+    {
+      "role_code": "NAVIGATOR",
+      "permission_code": "diagnostic.forward_hs"
+    },
+    {
+      "role_code": "NAVIGATOR",
+      "permission_code": "diagnostic.schedule"
+    },
+    {
+      "role_code": "NAVIGATOR",
+      "permission_code": "diagnostic.verify"
+    },
+    {
+      "role_code": "NAVIGATOR",
+      "permission_code": "diagnostic.view"
+    },
+    {
+      "role_code": "NAVIGATOR",
+      "permission_code": "navigation.update"
+    },
+    {
+      "role_code": "NAVIGATOR",
+      "permission_code": "page.navAppointments"
+    },
+    {
+      "role_code": "NAVIGATOR",
+      "permission_code": "page.navDiagnostics"
+    },
+    {
+      "role_code": "NAVIGATOR",
+      "permission_code": "page.navFollowUps"
+    },
+    {
+      "role_code": "NAVIGATOR",
+      "permission_code": "page.navPatients"
+    },
+    {
+      "role_code": "NAVIGATOR",
+      "permission_code": "page.navReferrals"
+    },
+    {
+      "role_code": "NAVIGATOR",
+      "permission_code": "page.navTracking"
+    },
+    {
+      "role_code": "NAVIGATOR",
+      "permission_code": "page.navVideo"
+    },
+    {
+      "role_code": "NAVIGATOR",
+      "permission_code": "patient.read_assigned"
+    },
+    {
+      "role_code": "NAVIGATOR",
+      "permission_code": "referral.view"
+    },
+    {
+      "role_code": "NAVIGATOR",
+      "permission_code": "treatment.track"
+    },
+    {
+      "role_code": "NAVIGATOR",
+      "permission_code": "video.join"
+    },
+    {
+      "role_code": "SPECIALIST",
+      "permission_code": "appointment.book"
+    },
+    {
+      "role_code": "SPECIALIST",
+      "permission_code": "appointment.slot_manage"
+    },
+    {
+      "role_code": "SPECIALIST",
+      "permission_code": "appointment.view"
+    },
+    {
+      "role_code": "SPECIALIST",
+      "permission_code": "care.close"
+    },
+    {
+      "role_code": "SPECIALIST",
+      "permission_code": "care.final_review"
+    },
+    {
+      "role_code": "SPECIALIST",
+      "permission_code": "care.plan_manage"
+    },
+    {
+      "role_code": "SPECIALIST",
+      "permission_code": "classification.set"
+    },
+    {
+      "role_code": "SPECIALIST",
+      "permission_code": "consultation.note"
+    },
+    {
+      "role_code": "SPECIALIST",
+      "permission_code": "diagnostic.advice_sign"
+    },
+    {
+      "role_code": "SPECIALIST",
+      "permission_code": "diagnostic.case_close"
+    },
+    {
+      "role_code": "SPECIALIST",
+      "permission_code": "diagnostic.reassess"
+    },
+    {
+      "role_code": "SPECIALIST",
+      "permission_code": "diagnostic.report_review"
+    },
+    {
+      "role_code": "SPECIALIST",
+      "permission_code": "diagnostic.view"
+    },
+    {
+      "role_code": "SPECIALIST",
+      "permission_code": "image.view"
+    },
+    {
+      "role_code": "SPECIALIST",
+      "permission_code": "investigation.record"
+    },
+    {
+      "role_code": "SPECIALIST",
+      "permission_code": "page.spConsultations"
+    },
+    {
+      "role_code": "SPECIALIST",
+      "permission_code": "page.spDiagnostics"
+    },
+    {
+      "role_code": "SPECIALIST",
+      "permission_code": "page.spFollowUps"
+    },
+    {
+      "role_code": "SPECIALIST",
+      "permission_code": "page.spNotes"
+    },
+    {
+      "role_code": "SPECIALIST",
+      "permission_code": "page.spReferrals"
+    },
+    {
+      "role_code": "SPECIALIST",
+      "permission_code": "page.spTracking"
+    },
+    {
+      "role_code": "SPECIALIST",
+      "permission_code": "page.spVideo"
+    },
+    {
+      "role_code": "SPECIALIST",
+      "permission_code": "pathology.review"
+    },
+    {
+      "role_code": "SPECIALIST",
+      "permission_code": "patient.read_assigned"
+    },
+    {
+      "role_code": "SPECIALIST",
+      "permission_code": "referral.view"
+    },
+    {
+      "role_code": "SPECIALIST",
+      "permission_code": "treatment.link"
+    },
+    {
+      "role_code": "SPECIALIST",
+      "permission_code": "video.join"
+    },
+    {
+      "role_code": "SUPER_ADMIN",
+      "permission_code": "audit.view"
+    },
+    {
+      "role_code": "SUPER_ADMIN",
+      "permission_code": "diagnostic.view"
+    },
+    {
+      "role_code": "SUPER_ADMIN",
+      "permission_code": "district_admin.manage"
+    },
+    {
+      "role_code": "SUPER_ADMIN",
+      "permission_code": "master.import"
+    },
+    {
+      "role_code": "SUPER_ADMIN",
+      "permission_code": "master.manage"
+    },
+    {
+      "role_code": "SUPER_ADMIN",
+      "permission_code": "master.view"
+    },
+    {
+      "role_code": "SUPER_ADMIN",
+      "permission_code": "page.auditLogs"
+    },
+    {
+      "role_code": "SUPER_ADMIN",
+      "permission_code": "page.diagnosticTestMaster"
+    },
+    {
+      "role_code": "SUPER_ADMIN",
+      "permission_code": "page.districtAdmins"
+    },
+    {
+      "role_code": "SUPER_ADMIN",
+      "permission_code": "page.facilities"
+    },
+    {
+      "role_code": "SUPER_ADMIN",
+      "permission_code": "page.healthWorkerAssignments"
+    },
+    {
+      "role_code": "SUPER_ADMIN",
+      "permission_code": "page.locationImport"
+    },
+    {
+      "role_code": "SUPER_ADMIN",
+      "permission_code": "page.registrationMonitoring"
+    },
+    {
+      "role_code": "SUPER_ADMIN",
+      "permission_code": "page.reports"
+    },
+    {
+      "role_code": "SUPER_ADMIN",
+      "permission_code": "page.roleManagement"
+    },
+    {
+      "role_code": "SUPER_ADMIN",
+      "permission_code": "page.settings"
+    },
+    {
+      "role_code": "SUPER_ADMIN",
+      "permission_code": "page.staffManagement"
+    },
+    {
+      "role_code": "SUPER_ADMIN",
+      "permission_code": "registration.monitor"
+    },
+    {
+      "role_code": "SUPER_ADMIN",
+      "permission_code": "role.manage"
+    },
+    {
+      "role_code": "SUPER_ADMIN",
+      "permission_code": "settings.manage"
+    },
+    {
+      "role_code": "SUPER_ADMIN",
+      "permission_code": "user.create_admin"
+    },
+    {
+      "role_code": "SUPER_ADMIN",
+      "permission_code": "user.create_staff"
+    },
+    {
+      "role_code": "SUPER_ADMIN",
+      "permission_code": "user.manage"
+    },
+    {
+      "role_code": "SYSTEM_ADMIN",
+      "permission_code": "audit.view"
+    },
+    {
+      "role_code": "SYSTEM_ADMIN",
+      "permission_code": "diagnostic.view"
+    },
+    {
+      "role_code": "SYSTEM_ADMIN",
+      "permission_code": "master.manage"
+    },
+    {
+      "role_code": "SYSTEM_ADMIN",
+      "permission_code": "master.view"
+    },
+    {
+      "role_code": "SYSTEM_ADMIN",
+      "permission_code": "page.adminAccounts"
+    },
+    {
+      "role_code": "SYSTEM_ADMIN",
+      "permission_code": "page.auditLogs"
+    },
+    {
+      "role_code": "SYSTEM_ADMIN",
+      "permission_code": "page.diagnosticTestMaster"
+    },
+    {
+      "role_code": "SYSTEM_ADMIN",
+      "permission_code": "page.facilities"
+    },
+    {
+      "role_code": "SYSTEM_ADMIN",
+      "permission_code": "page.masterData"
+    },
+    {
+      "role_code": "SYSTEM_ADMIN",
+      "permission_code": "page.registrations"
+    },
+    {
+      "role_code": "SYSTEM_ADMIN",
+      "permission_code": "page.roleManagement"
+    },
+    {
+      "role_code": "SYSTEM_ADMIN",
+      "permission_code": "page.settings"
+    },
+    {
+      "role_code": "SYSTEM_ADMIN",
+      "permission_code": "page.staffManagement"
+    },
+    {
+      "role_code": "SYSTEM_ADMIN",
+      "permission_code": "page.userManagement"
+    },
+    {
+      "role_code": "SYSTEM_ADMIN",
+      "permission_code": "user.create_staff"
+    },
+    {
+      "role_code": "SYSTEM_ADMIN",
+      "permission_code": "user.manage"
+    }
+  ]
+}

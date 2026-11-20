@@ -20,9 +20,28 @@ DEFAULT_TIMEOUT_SECONDS = 120
 
 
 class CloudflareVisionError(RuntimeError):
-    def __init__(self, message: str, status_code: int | None = None):
+    def __init__(
+        self,
+        message: str,
+        status_code: int | None = None,
+        *,
+        provider_request_started: bool = False,
+        provider_request_success: bool = False,
+        provider_response_received: bool = False,
+        error_code: str = "PROVIDER_REQUEST_FAILED",
+    ):
         super().__init__(message)
         self.status_code = status_code
+        self.provider_trace = {
+            "provider_request_started": provider_request_started,
+            "provider_request_success": provider_request_success,
+            "provider_response_received": provider_response_received,
+            "provider_http_status": status_code if provider_response_received else None,
+            "inference_performed": provider_request_success and provider_response_received,
+            "provider_response_validated": False,
+            "model_output_usable": False,
+            "error_code": error_code,
+        }
 
 
 def _as_data_uri(image_bytes: bytes, mime_type: str = "image/jpeg") -> str:
@@ -96,6 +115,7 @@ class CloudflareWorkersAIClient:
         messages: list[dict] | None = None,
         format: str | None = None,
         options: dict | None = None,
+        system_prompt: str | None = None,
         **_kwargs,
     ):
         """
@@ -120,7 +140,7 @@ class CloudflareWorkersAIClient:
             "messages": [
                 {
                     "role": "system",
-                    "content": (
+                    "content": system_prompt or (
                         "You are a medical screening image assistant. "
                         "Reply with a single JSON object only. "
                         "No markdown fences. No prose before or after the JSON. "
@@ -141,7 +161,25 @@ class CloudflareWorkersAIClient:
         client = self._http or httpx.Client(timeout=self.timeout_seconds)
         close_after = self._http is None
         try:
-            response = client.post(self.url if model in (None, self.model) else self._url_for(model), headers=headers, json=payload)
+            response = client.post(
+                self.url if model in (None, self.model) else self._url_for(model),
+                headers=headers,
+                json=payload,
+            )
+        except httpx.TimeoutException as error:
+            raise CloudflareVisionError(
+                "Cloudflare Workers AI request timed out.",
+                status_code=504,
+                provider_request_started=True,
+                error_code="PROVIDER_TIMEOUT",
+            ) from error
+        except httpx.HTTPError as error:
+            raise CloudflareVisionError(
+                "Cloudflare Workers AI request failed.",
+                status_code=503,
+                provider_request_started=True,
+                error_code="PROVIDER_REQUEST_FAILED",
+            ) from error
         finally:
             if close_after:
                 client.close()
@@ -152,17 +190,31 @@ class CloudflareWorkersAIClient:
             raise CloudflareVisionError(
                 "Cloudflare Workers AI returned a non-JSON response.",
                 status_code=response.status_code,
+                provider_request_started=True,
+                provider_response_received=True,
+                error_code="PROVIDER_RESPONSE_INVALID",
             ) from error
 
-        if response.status_code >= 400 or not body.get("success", False):
-            detail = body.get("errors") or body.get("messages") or body
+        if not isinstance(body, dict):
             raise CloudflareVisionError(
-                f"Cloudflare Workers AI request failed: {detail}",
+                "Cloudflare Workers AI returned an invalid response.",
                 status_code=response.status_code,
+                provider_request_started=True,
+                provider_response_received=True,
+                error_code="PROVIDER_RESPONSE_INVALID",
+            )
+        if not 200 <= response.status_code < 300 or body.get("success") is not True:
+            error_code = "PROVIDER_RATE_LIMIT" if response.status_code == 429 else "PROVIDER_HTTP_ERROR"
+            raise CloudflareVisionError(
+                "Cloudflare Workers AI request failed.",
+                status_code=response.status_code,
+                provider_request_started=True,
+                provider_response_received=True,
+                error_code=error_code,
             )
 
-        result = body.get("result") or {}
-        content = _normalize_response_content(result.get("response"))
+        result = body.get("result")
+        content = _normalize_response_content(result.get("response")) if isinstance(result, dict) else ""
         if isinstance(content, str):
             empty = not content.strip()
         elif isinstance(content, dict):
@@ -175,8 +227,24 @@ class CloudflareWorkersAIClient:
             raise CloudflareVisionError(
                 "Cloudflare Workers AI returned an empty vision response.",
                 status_code=response.status_code,
+                provider_request_started=True,
+                provider_request_success=True,
+                provider_response_received=True,
+                error_code="PROVIDER_RESPONSE_EMPTY",
             )
-        return SimpleNamespace(message=SimpleNamespace(content=content))
+        return SimpleNamespace(
+            message=SimpleNamespace(content=content),
+            provider_trace={
+                "provider_request_started": True,
+                "provider_request_success": True,
+                "provider_response_received": True,
+                "provider_http_status": response.status_code,
+                "inference_performed": True,
+                "provider_response_validated": False,
+                "model_output_usable": False,
+                "error_code": None,
+            },
+        )
 
     def _url_for(self, model: str) -> str:
         return (

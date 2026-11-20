@@ -99,4 +99,13 @@
   /* Layout sizes */
   --sidebar-width: 245px;
   --topbar-height: 76px;
+
+  /*
+    Content breakpoints (documented tokens — media queries still use px literals).
+    Drawer / shell stays at 900px in Sidebar/Topbar (do not change to these).
+  */
+  --bp-mobile: 767px;   /* phones: stack forms, single-column content */
+  --bp-tablet: 1199px;  /* tablets: 2-col stats / content */
+  --bp-desktop: 1200px; /* desktops: full multi-column grids */
+  --bp-drawer: 900px;   /* shell drawer (Sidebar/Topbar) — keep in sync */
 }

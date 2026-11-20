@@ -10,6 +10,9 @@ const {
   listMigrationFiles,
   resolveTrustedProductionDatabaseName,
   is003DualApproved,
+  is003OnlyPromoteApproved,
+  isAfterBootstrapPromotion,
+  assertExplicitTrustedDatabaseForOnly003,
   summarizeMigrationStatusForBootstrap,
   resolveKnownBootstrapPromotionChecksum,
   assertIsolatedTestDatabaseFor003,
@@ -21,6 +24,8 @@ const {
   INTEGRATION_TEST_BOOTSTRAP_USERNAME,
   TEST_DATABASE,
 } = require("../../utils/migrator");
+
+const RENDER_TRUSTED_DATABASE = "sudo_suspend_database_aarogya_db";
 
 const MIGRATIONS_DIR = path.join(__dirname, "..", "..", "migrations");
 
@@ -1356,5 +1361,379 @@ describe("runMigrations safeguards", () => {
         })
       ).rejects.toThrow(/not allowed on aarogya_test/);
     });
+  });
+});
+
+describe("only-003 promote bootstrap mode", () => {
+  const previousApprove = process.env.MIGRATE_APPROVE_003;
+  const previousTrusted = process.env.MIGRATION_TRUSTED_DATABASE_NAME;
+
+  afterEach(() => {
+    if (previousApprove === undefined) {
+      delete process.env.MIGRATE_APPROVE_003;
+    } else {
+      process.env.MIGRATE_APPROVE_003 = previousApprove;
+    }
+    if (previousTrusted === undefined) {
+      delete process.env.MIGRATION_TRUSTED_DATABASE_NAME;
+    } else {
+      process.env.MIGRATION_TRUSTED_DATABASE_NAME = previousTrusted;
+    }
+    jest.restoreAllMocks();
+  });
+
+  function pendingFrom003Rows() {
+    return appliedRows().filter(
+      (r) =>
+        r.filename !== BOOTSTRAP_PROMOTION_MIGRATION &&
+        !isAfterBootstrapPromotion(r.filename)
+    );
+  }
+
+  function only003Context(overrides = {}) {
+    return {
+      bootstrapUsername: "bootstrap_admin",
+      approve003PromoteBootstrap: true,
+      only003PromoteBootstrap: true,
+      env: {
+        MIGRATE_APPROVE_003: APPROVE_003_ENV_VALUE,
+        MIGRATION_TRUSTED_DATABASE_NAME: RENDER_TRUSTED_DATABASE,
+        ...(overrides.env || {}),
+      },
+      ...overrides,
+    };
+  }
+
+  test("is003OnlyPromoteApproved requires only-003 flag plus dual approval", () => {
+    expect(
+      is003OnlyPromoteApproved(
+        { approve003PromoteBootstrap: true },
+        { MIGRATE_APPROVE_003: APPROVE_003_ENV_VALUE }
+      )
+    ).toBe(false);
+    expect(
+      is003OnlyPromoteApproved(
+        { only003PromoteBootstrap: true, approve003PromoteBootstrap: true },
+        { MIGRATE_APPROVE_003: APPROVE_003_ENV_VALUE }
+      )
+    ).toBe(true);
+  });
+
+  test("assertExplicitTrustedDatabaseForOnly003 refuses unset and test DB", () => {
+    expect(() => assertExplicitTrustedDatabaseForOnly003({})).toThrow(
+      /MIGRATION_TRUSTED_DATABASE_NAME/
+    );
+    expect(() =>
+      assertExplicitTrustedDatabaseForOnly003({
+        MIGRATION_TRUSTED_DATABASE_NAME: TEST_DATABASE,
+      })
+    ).toThrow(/must not target the test database/);
+  });
+
+  test("only-003 executes 003 alone and never applies 004–043", async () => {
+    const rows = pendingFrom003Rows();
+    const client = createMockClient({
+      databaseName: RENDER_TRUSTED_DATABASE,
+      rowsByFilename: rows,
+      bootstrapAccount: { id: "u1", role_code: "SYSTEM_ADMIN" },
+      otherSuperAdminCount: 0,
+      verificationRows: "dynamic",
+      promoteToSuperAdmin: true,
+    });
+
+    const results = await runMigrations(client, {
+      apply: true,
+      only003PromoteBootstrap: true,
+      approve003PromoteBootstrap: true,
+      context: only003Context(),
+      log: () => {},
+    });
+
+    const executed = results.filter(
+      (r) =>
+        r.action === "applied-approved-003" ||
+        r.action === "applied" ||
+        r.action === "baseline"
+    );
+    expect(executed).toEqual([
+      { file: BOOTSTRAP_PROMOTION_MIGRATION, action: "applied-approved-003" },
+    ]);
+
+    const held = results.filter((r) => r.action === "held-back-only-003");
+    expect(held.some((r) => r.file === "004_lgd_locations.sql")).toBe(true);
+    expect(held.some((r) => r.file.startsWith("011_"))).toBe(true);
+    expect(held.length).toBe(
+      listMigrationFiles().filter((f) => isAfterBootstrapPromotion(f)).length
+    );
+
+    const historyInserts = client.queries
+      .filter((q) => /INSERT INTO schema_migrations/i.test(q.sql))
+      .map((q) => q.params && q.params[0]);
+    expect(historyInserts).toEqual([BOOTSTRAP_PROMOTION_MIGRATION]);
+    expect(
+      historyInserts.some(
+        (filename) =>
+          typeof filename === "string" && isAfterBootstrapPromotion(filename)
+      )
+    ).toBe(false);
+  });
+
+  test("only-003 preserves two-stage registration reviewer function and trigger", async () => {
+    const client = createMockClient({
+      databaseName: RENDER_TRUSTED_DATABASE,
+      rowsByFilename: pendingFrom003Rows(),
+      bootstrapAccount: { id: "u1", role_code: "SYSTEM_ADMIN" },
+      otherSuperAdminCount: 0,
+      verificationRows: "dynamic",
+      promoteToSuperAdmin: true,
+      newerRegistrationWorkflow: true,
+    });
+
+    await runMigrations(client, {
+      apply: true,
+      only003PromoteBootstrap: true,
+      approve003PromoteBootstrap: true,
+      context: only003Context(),
+      log: () => {},
+    });
+
+    const sqlAll = client.queries.map((q) => q.sql).join("\n");
+    expect(sqlAll).not.toMatch(/DROP\s+TRIGGER\s+.*trg_reg_reviewer/i);
+    expect(sqlAll).not.toMatch(
+      /CREATE\s+OR\s+REPLACE\s+FUNCTION[\s\S]{0,80}fn_validate_registration_reviewer/i
+    );
+    expect(
+      client.queries.some(
+        (q) =>
+          Array.isArray(q.params) &&
+          typeof q.params[0] === "string" &&
+          /^011_/.test(q.params[0])
+      )
+    ).toBe(false);
+  });
+
+  test("only-003 fails when approve CLI flag is missing", async () => {
+    const client = createMockClient({
+      databaseName: RENDER_TRUSTED_DATABASE,
+      rowsByFilename: pendingFrom003Rows(),
+    });
+
+    await expect(
+      runMigrations(client, {
+        apply: true,
+        only003PromoteBootstrap: true,
+        approve003PromoteBootstrap: false,
+        context: {
+          bootstrapUsername: "bootstrap_admin",
+          only003PromoteBootstrap: true,
+          env: {
+            MIGRATE_APPROVE_003: APPROVE_003_ENV_VALUE,
+            MIGRATION_TRUSTED_DATABASE_NAME: RENDER_TRUSTED_DATABASE,
+          },
+        },
+        log: () => {},
+      })
+    ).rejects.toThrow(/only-003 promote requires/);
+  });
+
+  test("only-003 fails when MIGRATE_APPROVE_003 is missing", async () => {
+    delete process.env.MIGRATE_APPROVE_003;
+    const client = createMockClient({
+      databaseName: RENDER_TRUSTED_DATABASE,
+      rowsByFilename: pendingFrom003Rows(),
+    });
+
+    await expect(
+      runMigrations(client, {
+        apply: true,
+        only003PromoteBootstrap: true,
+        approve003PromoteBootstrap: true,
+        context: {
+          bootstrapUsername: "bootstrap_admin",
+          approve003PromoteBootstrap: true,
+          only003PromoteBootstrap: true,
+          env: {
+            MIGRATION_TRUSTED_DATABASE_NAME: RENDER_TRUSTED_DATABASE,
+          },
+        },
+        log: () => {},
+      })
+    ).rejects.toThrow(/only-003 promote requires/);
+  });
+
+  test("only-003 fails on wrong database name", async () => {
+    const client = createMockClient({
+      databaseName: "unexpected_db",
+      rowsByFilename: pendingFrom003Rows(),
+      bootstrapAccount: { id: "u1", role_code: "SYSTEM_ADMIN" },
+    });
+
+    await expect(
+      runMigrations(client, {
+        apply: true,
+        only003PromoteBootstrap: true,
+        approve003PromoteBootstrap: true,
+        context: only003Context(),
+        log: () => {},
+      })
+    ).rejects.toThrow(/not allowed for database "unexpected_db"/);
+  });
+
+  test("only-003 refuses aarogya_test", async () => {
+    const client = createMockClient({
+      databaseName: TEST_DATABASE,
+      rowsByFilename: pendingFrom003Rows(),
+      bootstrapAccount: { id: "u1", role_code: "SYSTEM_ADMIN" },
+    });
+
+    await expect(
+      runMigrations(client, {
+        apply: true,
+        only003PromoteBootstrap: true,
+        approve003PromoteBootstrap: true,
+        context: only003Context({
+          env: {
+            MIGRATE_APPROVE_003: APPROVE_003_ENV_VALUE,
+            MIGRATION_TRUSTED_DATABASE_NAME: RENDER_TRUSTED_DATABASE,
+          },
+        }),
+        log: () => {},
+      })
+    ).rejects.toThrow(/not allowed on aarogya_test/);
+  });
+
+  test("only-003 fails when trusted database env is unset", async () => {
+    const client = createMockClient({
+      databaseName: RENDER_TRUSTED_DATABASE,
+      rowsByFilename: pendingFrom003Rows(),
+    });
+
+    await expect(
+      runMigrations(client, {
+        apply: true,
+        only003PromoteBootstrap: true,
+        approve003PromoteBootstrap: true,
+        context: {
+          bootstrapUsername: "bootstrap_admin",
+          approve003PromoteBootstrap: true,
+          only003PromoteBootstrap: true,
+          env: { MIGRATE_APPROVE_003: APPROVE_003_ENV_VALUE },
+        },
+        log: () => {},
+      })
+    ).rejects.toThrow(/MIGRATION_TRUSTED_DATABASE_NAME/);
+  });
+
+  test("only-003 fails on wrong 003 checksum", async () => {
+    const originalRead = fs.readFileSync.bind(fs);
+    jest.spyOn(fs, "readFileSync").mockImplementation((filePath, encoding) => {
+      const normalized = String(filePath).replace(/\\/g, "/");
+      if (
+        normalized.endsWith(`/${BOOTSTRAP_PROMOTION_MIGRATION}`) &&
+        encoding === undefined
+      ) {
+        return Buffer.from("tampered-003-source-for-checksum-test");
+      }
+      return originalRead(filePath, encoding);
+    });
+
+    const client = createMockClient({
+      databaseName: RENDER_TRUSTED_DATABASE,
+      rowsByFilename: pendingFrom003Rows(),
+      bootstrapAccount: { id: "u1", role_code: "SYSTEM_ADMIN" },
+      otherSuperAdminCount: 0,
+      verificationRows: "dynamic",
+      promoteToSuperAdmin: true,
+    });
+
+    await expect(
+      runMigrations(client, {
+        apply: true,
+        only003PromoteBootstrap: true,
+        approve003PromoteBootstrap: true,
+        context: only003Context(),
+        log: () => {},
+      })
+    ).rejects.toThrow(/checksum mismatch is not the reviewed local source/);
+  });
+
+  test("only-003 stops safely when 003 is already applied", async () => {
+    const rows = appliedRows().filter((r) => !isAfterBootstrapPromotion(r.filename));
+    const client = createMockClient({
+      databaseName: RENDER_TRUSTED_DATABASE,
+      rowsByFilename: rows,
+    });
+
+    const results = await runMigrations(client, {
+      apply: true,
+      only003PromoteBootstrap: true,
+      approve003PromoteBootstrap: true,
+      context: only003Context(),
+      log: () => {},
+    });
+
+    expect(results[0]).toEqual({
+      file: BOOTSTRAP_PROMOTION_MIGRATION,
+      action: "already-applied",
+    });
+    expect(results.some((r) => r.action === "held-back-only-003")).toBe(true);
+    expect(
+      client.queries.some((q) => /UPDATE tbl_users/i.test(q.sql) && /SUPER_ADMIN/i.test(q.sql))
+    ).toBe(false);
+    expect(
+      client.queries.some((q) => /INSERT INTO schema_migrations/i.test(q.sql))
+    ).toBe(false);
+  });
+
+  test("normal dual-approve mode still runs 003 then later migrations (unchanged)", async () => {
+    process.env.MIGRATE_APPROVE_003 = APPROVE_003_ENV_VALUE;
+    delete process.env.MIGRATION_TRUSTED_DATABASE_NAME;
+
+    const pendingPhase2 = new Set([
+      BOOTSTRAP_PROMOTION_MIGRATION,
+      "004_lgd_locations.sql",
+    ]);
+    const rows = appliedRows().filter((r) => !pendingPhase2.has(r.filename));
+    const client = createMockClient({
+      rowsByFilename: rows,
+      bootstrapAccount: { id: "u1", role_code: "SYSTEM_ADMIN" },
+      otherSuperAdminCount: 0,
+      verificationRows: "dynamic",
+      promoteToSuperAdmin: true,
+    });
+
+    const originalQuery = client.query.bind(client);
+    client.query = async (sql, params = []) => {
+      try {
+        return await originalQuery(sql, params);
+      } catch (error) {
+        if (!/Unexpected query in migrator test/i.test(error.message)) {
+          throw error;
+        }
+        return { rows: [] };
+      }
+    };
+
+    const results = await runMigrations(client, {
+      apply: true,
+      approve003PromoteBootstrap: true,
+      context: {
+        bootstrapUsername: "bootstrap_admin",
+        approve003PromoteBootstrap: true,
+      },
+      log: () => {},
+    });
+
+    const appliedOrder = results
+      .filter(
+        (r) => r.action === "applied-approved-003" || r.action === "applied"
+      )
+      .map((r) => r.file);
+
+    expect(appliedOrder.slice(0, 2)).toEqual([
+      BOOTSTRAP_PROMOTION_MIGRATION,
+      "004_lgd_locations.sql",
+    ]);
+    expect(results.some((r) => r.action === "held-back-only-003")).toBe(false);
   });
 });

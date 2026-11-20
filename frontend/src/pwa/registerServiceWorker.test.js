@@ -21,4 +21,11 @@ describe("PWA install dismissal helpers", () => {
     expect(isStandaloneDisplay()).toBe(true);
     window.matchMedia = original;
   });
+
+  test("standalone detection safely falls back when matchMedia is unavailable", () => {
+    const original = window.matchMedia;
+    delete window.matchMedia;
+    expect(isStandaloneDisplay()).toBe(false);
+    window.matchMedia = original;
+  });
 });

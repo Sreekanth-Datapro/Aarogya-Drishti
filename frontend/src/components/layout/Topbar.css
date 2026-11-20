@@ -81,6 +81,33 @@
   color: var(--primary-green);
 }
 
+/* PWA install affordance — shown only when usePwaInstall reports eligibility */
+.topbar-install-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: var(--touch-min, 44px);
+  min-width: var(--touch-min, 44px);
+  padding: 6px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--brand-200, #b0e4ca);
+  background: var(--brand-50, #effaf5);
+  color: var(--brand-700, #126447);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.topbar-install-btn:hover {
+  background: var(--brand-100, #d7f2e4);
+}
+
+.topbar-install-label {
+  white-space: nowrap;
+}
+
 /* Dropdown Container */
 .header-dropdown-wrap {
   position: relative;
@@ -465,10 +492,7 @@
   }
 
   .brand-subtitle {
-    overflow: hidden;
-    max-width: 48vw;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    display: none;
   }
 
   .admin-profile-meta {
@@ -476,6 +500,43 @@
   }
 
   .topbar-right {
-    gap: 8px;
+    gap: 6px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    max-width: 58vw;
+  }
+
+  .topbar-install-label {
+    display: none;
+  }
+
+  .topbar-action-pill .pill-text,
+  .topbar-action-pill .chevron-icon {
+    display: none;
+  }
+
+  .topbar-action-pill {
+    min-height: var(--touch-min, 44px);
+    min-width: var(--touch-min, 44px);
+    padding: 6px 8px;
+    justify-content: center;
+  }
+
+  .icon-action-btn {
+    /* Keep notification (and similar) icons touch-friendly without fighting min-* */
+    width: auto;
+    height: auto;
+    min-height: var(--touch-min, 44px);
+    min-width: var(--touch-min, 44px);
+  }
+
+  /* Voice mic: never inherit the desktop 36×36 lock from .icon-action-btn */
+  .icon-action-btn.global-voice-mic {
+    width: auto;
+    height: auto;
+    min-width: 44px;
+    min-height: 44px;
+    flex-shrink: 0;
+    padding: 0;
   }
 }

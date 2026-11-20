@@ -77,6 +77,12 @@ const config = {
     analysisTimeoutMs: Number(process.env.AI_PIPELINE_ANALYSIS_TIMEOUT_MS || 600000),
   },
 
+  // Sarvam AI Speech (backend only — never expose key via REACT_APP_*).
+  sarvamSpeech: {
+    apiKey: process.env.SARVAM_API_KEY || "",
+  },
+
+
   systemAdmin: {
     username: process.env.SYSTEM_ADMIN_USERNAME,
     password: process.env.SYSTEM_ADMIN_PASSWORD,

@@ -21,9 +21,8 @@
   color: #ffffff;
 }
 
+/* Columns from responsive.css (.diagnostics-stat-grid → 1/2/4) */
 .diagnostics-stat-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   gap: 12px;
 }
 
@@ -40,9 +39,9 @@
   gap: 16px;
 }
 
-@media (min-width: 900px) {
+@media (min-width: 768px) {
   .diagnostics-chart-grid {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

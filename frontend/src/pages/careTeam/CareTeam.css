@@ -293,7 +293,7 @@
 }
 
 /* Tablets */
-@media (min-width: 640px) {
+@media (min-width: 768px) {
   .care-hero {
     flex-direction: row;
     justify-content: space-between;
@@ -313,7 +313,7 @@
 }
 
 /* Desktops */
-@media (min-width: 1100px) {
+@media (min-width: 1200px) {
   .district-stat-grid.care-stat-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
@@ -385,7 +385,7 @@
   gap: 14px;
 }
 
-@media (min-width: 1100px) {
+@media (min-width: 1200px) {
   .video-meeting-layout {
     grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
     align-items: start;

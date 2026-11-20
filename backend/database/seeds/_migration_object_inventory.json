@@ -1,0 +1,1965 @@
+{
+  "summary": {
+    "localDatabase": "Aarogya",
+    "migrationCount": 40,
+    "critical": [
+      "004_lgd_locations.sql",
+      "013_explicit_mandal_medical_officer_workflow.sql",
+      "022_specialist_consultation_decisions.sql",
+      "023_specialist_availability_requests.sql",
+      "026_patient_care_lifecycle.sql",
+      "034_diagnostic_reports_care_duration.sql",
+      "037_specialist_return_and_precautions.sql",
+      "039_diagnostic_navigator_workflow.sql"
+    ],
+    "high": [
+      "003_promote_bootstrap_admin.js"
+    ],
+    "note": "Render live catalog was NOT queried this run (no session DB_*). Render inferences use user-confirmed tables + AAROGYA_BOOTSTRAP_FINAL.sql overlap."
+  },
+  "report": [
+    {
+      "file": "001_schema_fixes.sql",
+      "creates": [],
+      "riskyCreate": [],
+      "columnsAdded": [
+        "mandal_id",
+        "village_id",
+        "patient_id"
+      ],
+      "enums": [],
+      "indexes": [
+        "uq_ufa_one_primary"
+      ],
+      "constraints": [
+        "ck_facility_parent",
+        "ck_reg_reviewed",
+        "tbl_case_escalations_task_id_patient_id_fkey",
+        "tbl_case_escalations_referral_id_patient_id_fkey"
+      ],
+      "functions": [
+        "fn_check_case_transition",
+        "fn_video_slot_guard",
+        "fn_video_slot_booked"
+      ],
+      "triggers": [],
+      "bootstrapContainsTables": [],
+      "renderUserConfirmedTables": [],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [],
+        "idxs": [
+          "uq_ufa_one_primary"
+        ],
+        "cons": [
+          "ck_facility_parent",
+          "ck_reg_reviewed",
+          "tbl_case_escalations_task_id_patient_id_fkey",
+          "tbl_case_escalations_referral_id_patient_id_fkey"
+        ],
+        "fns": [
+          "fn_check_case_transition",
+          "fn_video_slot_guard",
+          "fn_video_slot_booked"
+        ],
+        "trgs": [],
+        "enums": []
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "MEDIUM",
+      "recommendation": "VERIFY_RENDER_CATALOG_BEFORE_APPLY",
+      "wouldFailIfAppliedOnKnownRender": false
+    },
+    {
+      "file": "002_security_core.sql",
+      "creates": [
+        "tbl_password_reset_tokens"
+      ],
+      "riskyCreate": [],
+      "columnsAdded": [
+        "previous_refresh_token_hash",
+        "mfa_last_used_step",
+        "mfa_enrolled_at"
+      ],
+      "enums": [],
+      "indexes": [
+        "idx_sessions_previous_hash",
+        "idx_reset_tokens_user_open"
+      ],
+      "constraints": [],
+      "functions": [
+        "fn_user_has_patient_access"
+      ],
+      "triggers": [],
+      "bootstrapContainsTables": [
+        "tbl_password_reset_tokens"
+      ],
+      "renderUserConfirmedTables": [],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [
+          "tbl_password_reset_tokens"
+        ],
+        "idxs": [
+          "idx_sessions_previous_hash",
+          "idx_reset_tokens_user_open"
+        ],
+        "cons": [],
+        "fns": [
+          "fn_user_has_patient_access"
+        ],
+        "trgs": [],
+        "enums": []
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "MEDIUM",
+      "recommendation": "LIKELY_PRESENT_IF_BOOTSTRAP_LOADED__HISTORY_ONLY",
+      "wouldFailIfAppliedOnKnownRender": false
+    },
+    {
+      "file": "003_promote_bootstrap_admin.js",
+      "creates": [],
+      "riskyCreate": [],
+      "columnsAdded": [],
+      "enums": [],
+      "indexes": [],
+      "constraints": [],
+      "functions": [],
+      "triggers": [],
+      "bootstrapContainsTables": [],
+      "renderUserConfirmedTables": [],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "HIGH",
+      "recommendation": "DUAL_APPROVE_OR_HISTORY_ONLY_IF_ALREADY_PROMOTED",
+      "wouldFailIfAppliedOnKnownRender": false
+    },
+    {
+      "file": "004_lgd_locations.sql",
+      "creates": [
+        "tbl_location_import_batches"
+      ],
+      "riskyCreate": [],
+      "columnsAdded": [
+        "lgd_code",
+        "state_lgd_code",
+        "data_source",
+        "is_verified",
+        "lgd_synced_at",
+        "import_batch_id",
+        "mandal_id"
+      ],
+      "enums": [],
+      "indexes": [
+        "uq_districts_lgd_code",
+        "uq_mandals_lgd_code",
+        "uq_villages_lgd_code",
+        "idx_villages_mandal",
+        "idx_location_imports_at"
+      ],
+      "constraints": [
+        "ck_districts_source",
+        "ck_mandals_source",
+        "ck_villages_source"
+      ],
+      "functions": [
+        "fn_village_mandal_from_gp"
+      ],
+      "triggers": [],
+      "bootstrapContainsTables": [
+        "tbl_location_import_batches"
+      ],
+      "renderUserConfirmedTables": [],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [
+          "tbl_location_import_batches"
+        ],
+        "idxs": [
+          "uq_districts_lgd_code",
+          "uq_mandals_lgd_code",
+          "uq_villages_lgd_code",
+          "idx_villages_mandal",
+          "idx_location_imports_at"
+        ],
+        "cons": [
+          "ck_districts_source",
+          "ck_mandals_source",
+          "ck_villages_source"
+        ],
+        "fns": [
+          "fn_village_mandal_from_gp"
+        ],
+        "trgs": [],
+        "enums": []
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "CRITICAL",
+      "recommendation": "DO_NOT_APPLY_DDL__HISTORY_ONLY_IF_COMPLETE",
+      "wouldFailIfAppliedOnKnownRender": false
+    },
+    {
+      "file": "005_case_facts_village_mandal.js",
+      "creates": [],
+      "riskyCreate": [],
+      "columnsAdded": [],
+      "enums": [],
+      "indexes": [],
+      "constraints": [],
+      "functions": [],
+      "triggers": [],
+      "bootstrapContainsTables": [],
+      "renderUserConfirmedTables": [],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "LOW",
+      "recommendation": "VERIFY_THEN_BASELINE_OR_APPLY",
+      "wouldFailIfAppliedOnKnownRender": false
+    },
+    {
+      "file": "006_facility_type_values.sql",
+      "creates": [],
+      "riskyCreate": [],
+      "columnsAdded": [],
+      "enums": [
+        "facility_type.SUB_CENTRE",
+        "facility_type.OTHER"
+      ],
+      "indexes": [],
+      "constraints": [],
+      "functions": [],
+      "triggers": [],
+      "bootstrapContainsTables": [],
+      "renderUserConfirmedTables": [],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": [
+          "facility_type.SUB_CENTRE",
+          "facility_type.OTHER"
+        ]
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "LOW",
+      "recommendation": "VERIFY_THEN_BASELINE_OR_APPLY",
+      "wouldFailIfAppliedOnKnownRender": false
+    },
+    {
+      "file": "007_facility_management.sql",
+      "creates": [],
+      "riskyCreate": [],
+      "columnsAdded": [
+        "category",
+        "mandal_id",
+        "village_id",
+        "address",
+        "pin_code",
+        "contact_phone",
+        "email",
+        "incharge_name",
+        "created_at",
+        "updated_at"
+      ],
+      "enums": [],
+      "indexes": [
+        "uq_facilities_code_upper",
+        "idx_facilities_mandal",
+        "idx_facilities_village",
+        "idx_facilities_category",
+        "idx_facilities_active"
+      ],
+      "constraints": [
+        "ck_facility_category",
+        "ck_facility_parent",
+        "ck_facility_pin",
+        "ck_facility_phone"
+      ],
+      "functions": [
+        "fn_facility_location_check"
+      ],
+      "triggers": [],
+      "bootstrapContainsTables": [],
+      "renderUserConfirmedTables": [],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [],
+        "idxs": [
+          "uq_facilities_code_upper",
+          "idx_facilities_mandal",
+          "idx_facilities_village",
+          "idx_facilities_category",
+          "idx_facilities_active"
+        ],
+        "cons": [
+          "ck_facility_category",
+          "ck_facility_parent",
+          "ck_facility_pin",
+          "ck_facility_phone"
+        ],
+        "fns": [
+          "fn_facility_location_check"
+        ],
+        "trgs": [],
+        "enums": []
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "MEDIUM",
+      "recommendation": "VERIFY_RENDER_CATALOG_BEFORE_APPLY",
+      "wouldFailIfAppliedOnKnownRender": false
+    },
+    {
+      "file": "008_pending_setup_status.sql",
+      "creates": [],
+      "riskyCreate": [],
+      "columnsAdded": [],
+      "enums": [
+        "user_status.PENDING_SETUP"
+      ],
+      "indexes": [],
+      "constraints": [],
+      "functions": [],
+      "triggers": [],
+      "bootstrapContainsTables": [],
+      "renderUserConfirmedTables": [],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": [
+          "user_status.PENDING_SETUP"
+        ]
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "LOW",
+      "recommendation": "VERIFY_THEN_BASELINE_OR_APPLY",
+      "wouldFailIfAppliedOnKnownRender": false
+    },
+    {
+      "file": "009_system_admin_management.sql",
+      "creates": [
+        "tbl_district_admin_setup_tokens"
+      ],
+      "riskyCreate": [],
+      "columnsAdded": [
+        "is_system_role",
+        "district_id"
+      ],
+      "enums": [],
+      "indexes": [
+        "idx_users_district",
+        "uq_district_admin_setup_one_open_token",
+        "idx_district_admin_setup_token_expiry"
+      ],
+      "constraints": [],
+      "functions": [],
+      "triggers": [],
+      "bootstrapContainsTables": [
+        "tbl_district_admin_setup_tokens"
+      ],
+      "renderUserConfirmedTables": [],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [
+          "tbl_district_admin_setup_tokens"
+        ],
+        "idxs": [
+          "idx_users_district",
+          "uq_district_admin_setup_one_open_token",
+          "idx_district_admin_setup_token_expiry"
+        ],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "MEDIUM",
+      "recommendation": "LIKELY_PRESENT_IF_BOOTSTRAP_LOADED__HISTORY_ONLY",
+      "wouldFailIfAppliedOnKnownRender": false
+    },
+    {
+      "file": "010_registration_workflow_compat.sql",
+      "creates": [],
+      "riskyCreate": [],
+      "columnsAdded": [
+        "workflow_version"
+      ],
+      "enums": [],
+      "indexes": [],
+      "constraints": [
+        "ck_registration_workflow_version"
+      ],
+      "functions": [],
+      "triggers": [],
+      "bootstrapContainsTables": [],
+      "renderUserConfirmedTables": [],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [
+          "ck_registration_workflow_version"
+        ],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "MEDIUM",
+      "recommendation": "VERIFY_RENDER_CATALOG_BEFORE_APPLY",
+      "wouldFailIfAppliedOnKnownRender": false
+    },
+    {
+      "file": "011_unify_admin_roles.sql",
+      "creates": [],
+      "riskyCreate": [],
+      "columnsAdded": [],
+      "enums": [],
+      "indexes": [],
+      "constraints": [
+        "ck_reg_rejection_reason_nonblank"
+      ],
+      "functions": [
+        "fn_validate_registration_reviewer"
+      ],
+      "triggers": [],
+      "bootstrapContainsTables": [],
+      "renderUserConfirmedTables": [],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [
+          "ck_reg_rejection_reason_nonblank"
+        ],
+        "fns": [
+          "fn_validate_registration_reviewer"
+        ],
+        "trgs": [],
+        "enums": []
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "MEDIUM",
+      "recommendation": "VERIFY_RENDER_CATALOG_BEFORE_APPLY",
+      "wouldFailIfAppliedOnKnownRender": false
+    },
+    {
+      "file": "012_district_admin_setup_delivery.sql",
+      "creates": [],
+      "riskyCreate": [],
+      "columnsAdded": [
+        "encrypted_token",
+        "email_delivery_status",
+        "email_delivery_attempted_at",
+        "email_delivery_sent_at",
+        "sms_delivery_status",
+        "sms_delivery_attempted_at",
+        "sms_delivery_sent_at"
+      ],
+      "enums": [],
+      "indexes": [],
+      "constraints": [
+        "ck_district_setup_email_delivery_status",
+        "ck_district_setup_sms_delivery_status"
+      ],
+      "functions": [],
+      "triggers": [],
+      "bootstrapContainsTables": [],
+      "renderUserConfirmedTables": [],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [
+          "ck_district_setup_email_delivery_status",
+          "ck_district_setup_sms_delivery_status"
+        ],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "MEDIUM",
+      "recommendation": "VERIFY_RENDER_CATALOG_BEFORE_APPLY",
+      "wouldFailIfAppliedOnKnownRender": false
+    },
+    {
+      "file": "013_explicit_mandal_medical_officer_workflow.sql",
+      "creates": [
+        "tbl_health_worker_location_assignments",
+        "tbl_medical_officer_mandal_assignments",
+        "tbl_medical_officer_case_claims"
+      ],
+      "riskyCreate": [
+        "tbl_health_worker_location_assignments",
+        "tbl_medical_officer_mandal_assignments",
+        "tbl_medical_officer_case_claims"
+      ],
+      "columnsAdded": [
+        "mandal_id"
+      ],
+      "enums": [],
+      "indexes": [
+        "uq_hw_assignment_active",
+        "uq_mo_mandal_assignment_active",
+        "idx_mo_mandal_assignment_scope",
+        "uq_mo_claim_one_active_per_patient",
+        "idx_mo_claim_active_owner"
+      ],
+      "constraints": [
+        "uq_mst_mandals_id_district",
+        "uq_mst_villages_id_mandal",
+        "uq_mst_facilities_id_district_mandal",
+        "fk_patient_village_mandal"
+      ],
+      "functions": [
+        "fn_validate_health_worker_location_assignment",
+        "fn_validate_medical_officer_mandal_assignment",
+        "fn_patient_set_mandal_and_validate_hw_assignment",
+        "fn_validate_medical_officer_case_claim",
+        "fn_user_has_patient_access"
+      ],
+      "triggers": [],
+      "bootstrapContainsTables": [
+        "tbl_health_worker_location_assignments",
+        "tbl_medical_officer_mandal_assignments",
+        "tbl_medical_officer_case_claims"
+      ],
+      "renderUserConfirmedTables": [
+        "tbl_health_worker_location_assignments",
+        "tbl_medical_officer_mandal_assignments",
+        "tbl_medical_officer_case_claims"
+      ],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [
+          "tbl_health_worker_location_assignments",
+          "tbl_medical_officer_mandal_assignments",
+          "tbl_medical_officer_case_claims"
+        ],
+        "idxs": [
+          "uq_hw_assignment_active",
+          "uq_mo_mandal_assignment_active",
+          "idx_mo_mandal_assignment_scope",
+          "uq_mo_claim_one_active_per_patient",
+          "idx_mo_claim_active_owner"
+        ],
+        "cons": [
+          "uq_mst_mandals_id_district",
+          "uq_mst_villages_id_mandal",
+          "uq_mst_facilities_id_district_mandal",
+          "fk_patient_village_mandal"
+        ],
+        "fns": [
+          "fn_validate_health_worker_location_assignment",
+          "fn_validate_medical_officer_mandal_assignment",
+          "fn_patient_set_mandal_and_validate_hw_assignment",
+          "fn_validate_medical_officer_case_claim",
+          "fn_user_has_patient_access"
+        ],
+        "trgs": [],
+        "enums": []
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "CRITICAL",
+      "recommendation": "DO_NOT_APPLY_DDL__HISTORY_ONLY_IF_COMPLETE",
+      "wouldFailIfAppliedOnKnownRender": true
+    },
+    {
+      "file": "015_two_stage_registration.sql",
+      "creates": [],
+      "riskyCreate": [],
+      "columnsAdded": [
+        "workflow_version",
+        "mo_recommended_by",
+        "mo_recommended_at",
+        "mo_recommendation",
+        "mo_recommendation_note",
+        "status_token_hash",
+        "status_token_expires_at"
+      ],
+      "enums": [],
+      "indexes": [
+        "uq_reg_015_status_token_hash",
+        "idx_reg_015_pending_mandal",
+        "idx_reg_015_pending_final_decision"
+      ],
+      "constraints": [
+        "ck_reg_015_recommendation",
+        "ck_reg_015_status_token_pair"
+      ],
+      "functions": [
+        "fn_validate_registration_reviewer"
+      ],
+      "triggers": [],
+      "bootstrapContainsTables": [],
+      "renderUserConfirmedTables": [],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [],
+        "idxs": [
+          "uq_reg_015_status_token_hash",
+          "idx_reg_015_pending_mandal",
+          "idx_reg_015_pending_final_decision"
+        ],
+        "cons": [
+          "ck_reg_015_recommendation",
+          "ck_reg_015_status_token_pair"
+        ],
+        "fns": [
+          "fn_validate_registration_reviewer"
+        ],
+        "trgs": [],
+        "enums": []
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "MEDIUM",
+      "recommendation": "VERIFY_RENDER_CATALOG_BEFORE_APPLY",
+      "wouldFailIfAppliedOnKnownRender": false
+    },
+    {
+      "file": "017_health_worker_mandal_registration.sql",
+      "creates": [],
+      "riskyCreate": [],
+      "columnsAdded": [],
+      "enums": [],
+      "indexes": [],
+      "constraints": [],
+      "functions": [
+        "fn_patient_set_mandal_and_validate_hw_assignment",
+        "fn_user_has_patient_access"
+      ],
+      "triggers": [],
+      "bootstrapContainsTables": [],
+      "renderUserConfirmedTables": [],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [
+          "fn_patient_set_mandal_and_validate_hw_assignment",
+          "fn_user_has_patient_access"
+        ],
+        "trgs": [],
+        "enums": []
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "LOW",
+      "recommendation": "DATA_OR_RBAC_ONLY__SAFE_IF_IDEMPOTENT",
+      "wouldFailIfAppliedOnKnownRender": false
+    },
+    {
+      "file": "018_ai_screening_details.sql",
+      "creates": [],
+      "riskyCreate": [],
+      "columnsAdded": [
+        "analysis_details"
+      ],
+      "enums": [],
+      "indexes": [],
+      "constraints": [
+        "ck_ai_analysis_details_object"
+      ],
+      "functions": [],
+      "triggers": [],
+      "bootstrapContainsTables": [],
+      "renderUserConfirmedTables": [],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [
+          "ck_ai_analysis_details_object"
+        ],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "MEDIUM",
+      "recommendation": "VERIFY_RENDER_CATALOG_BEFORE_APPLY",
+      "wouldFailIfAppliedOnKnownRender": false
+    },
+    {
+      "file": "020_specialist_consultation_booking.sql",
+      "creates": [],
+      "riskyCreate": [],
+      "columnsAdded": [],
+      "enums": [],
+      "indexes": [],
+      "constraints": [],
+      "functions": [],
+      "triggers": [],
+      "bootstrapContainsTables": [],
+      "renderUserConfirmedTables": [],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "LOW",
+      "recommendation": "DATA_OR_RBAC_ONLY__SAFE_IF_IDEMPOTENT",
+      "wouldFailIfAppliedOnKnownRender": false
+    },
+    {
+      "file": "021_specialist_consultation_slot_management.sql",
+      "creates": [],
+      "riskyCreate": [],
+      "columnsAdded": [],
+      "enums": [],
+      "indexes": [],
+      "constraints": [],
+      "functions": [],
+      "triggers": [],
+      "bootstrapContainsTables": [],
+      "renderUserConfirmedTables": [],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "LOW",
+      "recommendation": "DATA_OR_RBAC_ONLY__SAFE_IF_IDEMPOTENT",
+      "wouldFailIfAppliedOnKnownRender": false
+    },
+    {
+      "file": "022_specialist_consultation_decisions.sql",
+      "creates": [
+        "tbl_specialist_consultation_decisions"
+      ],
+      "riskyCreate": [
+        "tbl_specialist_consultation_decisions"
+      ],
+      "columnsAdded": [],
+      "enums": [],
+      "indexes": [
+        "idx_specialist_decisions_patient",
+        "idx_specialist_decisions_navigator"
+      ],
+      "constraints": [],
+      "functions": [
+        "fn_protect_signed_specialist_decision"
+      ],
+      "triggers": [],
+      "bootstrapContainsTables": [
+        "tbl_specialist_consultation_decisions"
+      ],
+      "renderUserConfirmedTables": [
+        "tbl_specialist_consultation_decisions"
+      ],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [
+          "tbl_specialist_consultation_decisions"
+        ],
+        "idxs": [
+          "idx_specialist_decisions_patient",
+          "idx_specialist_decisions_navigator"
+        ],
+        "cons": [],
+        "fns": [
+          "fn_protect_signed_specialist_decision"
+        ],
+        "trgs": [],
+        "enums": []
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "CRITICAL",
+      "recommendation": "DO_NOT_APPLY_DDL__HISTORY_ONLY_IF_COMPLETE",
+      "wouldFailIfAppliedOnKnownRender": true
+    },
+    {
+      "file": "023_specialist_availability_requests.sql",
+      "creates": [
+        "tbl_specialist_availability_requests"
+      ],
+      "riskyCreate": [
+        "tbl_specialist_availability_requests"
+      ],
+      "columnsAdded": [],
+      "enums": [],
+      "indexes": [
+        "uq_specialist_availability_active_referral",
+        "idx_specialist_availability_pending",
+        "idx_specialist_availability_hospital"
+      ],
+      "constraints": [],
+      "functions": [],
+      "triggers": [],
+      "bootstrapContainsTables": [
+        "tbl_specialist_availability_requests"
+      ],
+      "renderUserConfirmedTables": [],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [
+          "tbl_specialist_availability_requests"
+        ],
+        "idxs": [
+          "uq_specialist_availability_active_referral",
+          "idx_specialist_availability_pending",
+          "idx_specialist_availability_hospital"
+        ],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "CRITICAL",
+      "recommendation": "DO_NOT_APPLY_DDL__HISTORY_ONLY_IF_COMPLETE",
+      "wouldFailIfAppliedOnKnownRender": true
+    },
+    {
+      "file": "024_video_decision_booking_separation.sql",
+      "creates": [],
+      "riskyCreate": [],
+      "columnsAdded": [],
+      "enums": [],
+      "indexes": [],
+      "constraints": [
+        "ck_specialist_availability_request_state"
+      ],
+      "functions": [],
+      "triggers": [],
+      "bootstrapContainsTables": [],
+      "renderUserConfirmedTables": [],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [
+          "ck_specialist_availability_request_state"
+        ],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "MEDIUM",
+      "recommendation": "VERIFY_RENDER_CATALOG_BEFORE_APPLY",
+      "wouldFailIfAppliedOnKnownRender": false
+    },
+    {
+      "file": "025_video_join_hw_navigator.sql",
+      "creates": [],
+      "riskyCreate": [],
+      "columnsAdded": [],
+      "enums": [],
+      "indexes": [],
+      "constraints": [],
+      "functions": [],
+      "triggers": [],
+      "bootstrapContainsTables": [],
+      "renderUserConfirmedTables": [],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "LOW",
+      "recommendation": "DATA_OR_RBAC_ONLY__SAFE_IF_IDEMPOTENT",
+      "wouldFailIfAppliedOnKnownRender": false
+    },
+    {
+      "file": "026_patient_care_lifecycle.sql",
+      "creates": [
+        "tbl_care_plans",
+        "tbl_care_plan_status_history",
+        "tbl_care_medicines",
+        "tbl_care_followup_schedules",
+        "tbl_care_followup_reports",
+        "tbl_care_discomfort_reports",
+        "tbl_care_final_reviews"
+      ],
+      "riskyCreate": [],
+      "columnsAdded": [],
+      "enums": [],
+      "indexes": [
+        "uq_care_plans_active_screening",
+        "idx_care_plans_navigator_status",
+        "idx_care_plans_mo_status",
+        "idx_care_plans_patient",
+        "idx_care_plan_status_history",
+        "idx_care_medicines_plan",
+        "idx_care_followup_hw_due",
+        "idx_care_followup_plan",
+        "idx_care_followup_reports_patient",
+        "idx_care_discomfort_open",
+        "idx_care_final_reviews_plan"
+      ],
+      "constraints": [
+        "fk_care_plans_referral_patient"
+      ],
+      "functions": [],
+      "triggers": [],
+      "bootstrapContainsTables": [
+        "tbl_care_plans",
+        "tbl_care_plan_status_history",
+        "tbl_care_medicines",
+        "tbl_care_followup_schedules",
+        "tbl_care_followup_reports",
+        "tbl_care_discomfort_reports",
+        "tbl_care_final_reviews"
+      ],
+      "renderUserConfirmedTables": [],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [
+          "tbl_care_plans",
+          "tbl_care_plan_status_history",
+          "tbl_care_medicines",
+          "tbl_care_followup_schedules",
+          "tbl_care_followup_reports",
+          "tbl_care_discomfort_reports",
+          "tbl_care_final_reviews"
+        ],
+        "idxs": [
+          "uq_care_plans_active_screening",
+          "idx_care_plans_navigator_status",
+          "idx_care_plans_mo_status",
+          "idx_care_plans_patient",
+          "idx_care_plan_status_history",
+          "idx_care_medicines_plan",
+          "idx_care_followup_hw_due",
+          "idx_care_followup_plan",
+          "idx_care_followup_reports_patient",
+          "idx_care_discomfort_open",
+          "idx_care_final_reviews_plan"
+        ],
+        "cons": [
+          "fk_care_plans_referral_patient"
+        ],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "CRITICAL",
+      "recommendation": "DO_NOT_APPLY_DDL__HISTORY_ONLY_IF_COMPLETE",
+      "wouldFailIfAppliedOnKnownRender": false
+    },
+    {
+      "file": "027_case_transition_allowed.sql",
+      "creates": [],
+      "riskyCreate": [],
+      "columnsAdded": [],
+      "enums": [],
+      "indexes": [],
+      "constraints": [],
+      "functions": [
+        "fn_case_transition_allowed",
+        "fn_check_case_transition"
+      ],
+      "triggers": [],
+      "bootstrapContainsTables": [],
+      "renderUserConfirmedTables": [],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [
+          "fn_case_transition_allowed",
+          "fn_check_case_transition"
+        ],
+        "trgs": [],
+        "enums": []
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "LOW",
+      "recommendation": "DATA_OR_RBAC_ONLY__SAFE_IF_IDEMPOTENT",
+      "wouldFailIfAppliedOnKnownRender": false
+    },
+    {
+      "file": "028_navigator_video_coordination.sql",
+      "creates": [],
+      "riskyCreate": [],
+      "columnsAdded": [],
+      "enums": [],
+      "indexes": [
+        "uq_specialist_availability_active_referral"
+      ],
+      "constraints": [
+        "tbl_specialist_availability_requests_status_check",
+        "ck_specialist_availability_request_state"
+      ],
+      "functions": [],
+      "triggers": [],
+      "bootstrapContainsTables": [],
+      "renderUserConfirmedTables": [],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [],
+        "idxs": [
+          "uq_specialist_availability_active_referral"
+        ],
+        "cons": [
+          "tbl_specialist_availability_requests_status_check",
+          "ck_specialist_availability_request_state"
+        ],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "MEDIUM",
+      "recommendation": "VERIFY_RENDER_CATALOG_BEFORE_APPLY",
+      "wouldFailIfAppliedOnKnownRender": false
+    },
+    {
+      "file": "029_diagnostic_module.sql",
+      "creates": [
+        "mst_diagnostic_categories",
+        "mst_diagnostic_tests",
+        "tbl_diagnostic_orders",
+        "tbl_diagnostic_order_items",
+        "tbl_diagnostic_status_history"
+      ],
+      "riskyCreate": [],
+      "columnsAdded": [],
+      "enums": [],
+      "indexes": [
+        "idx_diagnostic_tests_category",
+        "idx_diagnostic_orders_patient",
+        "idx_diagnostic_orders_referral",
+        "idx_diagnostic_orders_prescriber",
+        "idx_diagnostic_orders_facility",
+        "idx_diagnostic_order_items_order",
+        "idx_diagnostic_order_items_status",
+        "idx_diagnostic_status_history_order"
+      ],
+      "constraints": [],
+      "functions": [],
+      "triggers": [],
+      "bootstrapContainsTables": [
+        "mst_diagnostic_categories",
+        "mst_diagnostic_tests",
+        "tbl_diagnostic_orders",
+        "tbl_diagnostic_order_items",
+        "tbl_diagnostic_status_history"
+      ],
+      "renderUserConfirmedTables": [],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [
+          "mst_diagnostic_categories",
+          "mst_diagnostic_tests",
+          "tbl_diagnostic_orders",
+          "tbl_diagnostic_order_items",
+          "tbl_diagnostic_status_history"
+        ],
+        "idxs": [
+          "idx_diagnostic_tests_category",
+          "idx_diagnostic_orders_patient",
+          "idx_diagnostic_orders_referral",
+          "idx_diagnostic_orders_prescriber",
+          "idx_diagnostic_orders_facility",
+          "idx_diagnostic_order_items_order",
+          "idx_diagnostic_order_items_status",
+          "idx_diagnostic_status_history_order"
+        ],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "MEDIUM",
+      "recommendation": "LIKELY_PRESENT_IF_BOOTSTRAP_LOADED__HISTORY_ONLY",
+      "wouldFailIfAppliedOnKnownRender": false
+    },
+    {
+      "file": "030_diagnostic_scheduling.sql",
+      "creates": [
+        "tbl_diagnostic_appointments",
+        "tbl_diagnostic_appointment_history"
+      ],
+      "riskyCreate": [],
+      "columnsAdded": [],
+      "enums": [],
+      "indexes": [
+        "idx_diagnostic_appt_order",
+        "idx_diagnostic_appt_patient",
+        "idx_diagnostic_appt_facility_time",
+        "idx_diagnostic_appt_status",
+        "idx_diagnostic_appt_history"
+      ],
+      "constraints": [],
+      "functions": [],
+      "triggers": [],
+      "bootstrapContainsTables": [
+        "tbl_diagnostic_appointments",
+        "tbl_diagnostic_appointment_history"
+      ],
+      "renderUserConfirmedTables": [],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [
+          "tbl_diagnostic_appointments",
+          "tbl_diagnostic_appointment_history"
+        ],
+        "idxs": [
+          "idx_diagnostic_appt_order",
+          "idx_diagnostic_appt_patient",
+          "idx_diagnostic_appt_facility_time",
+          "idx_diagnostic_appt_status",
+          "idx_diagnostic_appt_history"
+        ],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "MEDIUM",
+      "recommendation": "LIKELY_PRESENT_IF_BOOTSTRAP_LOADED__HISTORY_ONLY",
+      "wouldFailIfAppliedOnKnownRender": false
+    },
+    {
+      "file": "031_patient_tracking_timeline.sql",
+      "creates": [],
+      "riskyCreate": [],
+      "columnsAdded": [],
+      "enums": [],
+      "indexes": [],
+      "constraints": [],
+      "functions": [],
+      "triggers": [],
+      "bootstrapContainsTables": [],
+      "renderUserConfirmedTables": [],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "LOW",
+      "recommendation": "DATA_OR_RBAC_ONLY__SAFE_IF_IDEMPOTENT",
+      "wouldFailIfAppliedOnKnownRender": false
+    },
+    {
+      "file": "032_cloudflare_workers_ai_model.sql",
+      "creates": [],
+      "riskyCreate": [],
+      "columnsAdded": [],
+      "enums": [],
+      "indexes": [],
+      "constraints": [],
+      "functions": [],
+      "triggers": [],
+      "bootstrapContainsTables": [],
+      "renderUserConfirmedTables": [],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "LOW",
+      "recommendation": "DATA_OR_RBAC_ONLY__SAFE_IF_IDEMPOTENT",
+      "wouldFailIfAppliedOnKnownRender": false
+    },
+    {
+      "file": "033_care_followup_reassessment.sql",
+      "creates": [],
+      "riskyCreate": [],
+      "columnsAdded": [
+        "hospital_revisit_date",
+        "patient_informed",
+        "hospital_revisit_scheduled",
+        "hospital_attended",
+        "improvement_noted",
+        "side_effects",
+        "hospital_revisit_reminded"
+      ],
+      "enums": [
+        "care_final_decision.URGENT_ESCALATION"
+      ],
+      "indexes": [
+        "uq_care_followup_active_plan",
+        "idx_care_plans_revisit_date"
+      ],
+      "constraints": [
+        "ck_care_plan_revisit_dates"
+      ],
+      "functions": [],
+      "triggers": [],
+      "bootstrapContainsTables": [],
+      "renderUserConfirmedTables": [],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [],
+        "idxs": [
+          "uq_care_followup_active_plan",
+          "idx_care_plans_revisit_date"
+        ],
+        "cons": [
+          "ck_care_plan_revisit_dates"
+        ],
+        "fns": [],
+        "trgs": [],
+        "enums": [
+          "care_final_decision.URGENT_ESCALATION"
+        ]
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "MEDIUM",
+      "recommendation": "VERIFY_RENDER_CATALOG_BEFORE_APPLY",
+      "wouldFailIfAppliedOnKnownRender": false
+    },
+    {
+      "file": "034_diagnostic_reports_care_duration.sql",
+      "creates": [
+        "tbl_diagnostic_order_reports"
+      ],
+      "riskyCreate": [],
+      "columnsAdded": [
+        "precautions_followed",
+        "start_date",
+        "expected_end_date"
+      ],
+      "enums": [],
+      "indexes": [
+        "idx_diagnostic_order_reports_order",
+        "idx_diagnostic_order_reports_patient",
+        "idx_diagnostic_order_reports_pending"
+      ],
+      "constraints": [
+        "ck_care_medicine_dates"
+      ],
+      "functions": [],
+      "triggers": [],
+      "bootstrapContainsTables": [
+        "tbl_diagnostic_order_reports"
+      ],
+      "renderUserConfirmedTables": [],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [
+          "tbl_diagnostic_order_reports"
+        ],
+        "idxs": [
+          "idx_diagnostic_order_reports_order",
+          "idx_diagnostic_order_reports_patient",
+          "idx_diagnostic_order_reports_pending"
+        ],
+        "cons": [
+          "ck_care_medicine_dates"
+        ],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "CRITICAL",
+      "recommendation": "DO_NOT_APPLY_DDL__HISTORY_ONLY_IF_COMPLETE",
+      "wouldFailIfAppliedOnKnownRender": false
+    },
+    {
+      "file": "035_care_missed_revisit_timeline_referral.sql",
+      "creates": [],
+      "riskyCreate": [],
+      "columnsAdded": [],
+      "enums": [],
+      "indexes": [
+        "idx_care_plans_referral"
+      ],
+      "constraints": [],
+      "functions": [],
+      "triggers": [],
+      "bootstrapContainsTables": [],
+      "renderUserConfirmedTables": [],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [],
+        "idxs": [
+          "idx_care_plans_referral"
+        ],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "LOW",
+      "recommendation": "DATA_OR_RBAC_ONLY__SAFE_IF_IDEMPOTENT",
+      "wouldFailIfAppliedOnKnownRender": false
+    },
+    {
+      "file": "036_specialist_care_lifecycle.sql",
+      "creates": [],
+      "riskyCreate": [],
+      "columnsAdded": [
+        "responsible_specialist_id"
+      ],
+      "enums": [],
+      "indexes": [
+        "idx_care_plans_responsible_specialist"
+      ],
+      "constraints": [],
+      "functions": [
+        "fn_care_final_review_clinician_guard"
+      ],
+      "triggers": [],
+      "bootstrapContainsTables": [],
+      "renderUserConfirmedTables": [],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [],
+        "idxs": [
+          "idx_care_plans_responsible_specialist"
+        ],
+        "cons": [],
+        "fns": [
+          "fn_care_final_review_clinician_guard"
+        ],
+        "trgs": [],
+        "enums": []
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "LOW",
+      "recommendation": "VERIFY_THEN_BASELINE_OR_APPLY",
+      "wouldFailIfAppliedOnKnownRender": false
+    },
+    {
+      "file": "037_specialist_return_and_precautions.sql",
+      "creates": [
+        "tbl_care_return_to_mo"
+      ],
+      "riskyCreate": [],
+      "columnsAdded": [
+        "precautions_duration_days",
+        "precautions_expected_end_date"
+      ],
+      "enums": [],
+      "indexes": [
+        "uq_care_return_to_mo_pending_patient",
+        "idx_care_return_to_mo_patient"
+      ],
+      "constraints": [
+        "ck_care_plan_precautions_duration",
+        "ck_care_plan_precautions_end"
+      ],
+      "functions": [],
+      "triggers": [],
+      "bootstrapContainsTables": [
+        "tbl_care_return_to_mo"
+      ],
+      "renderUserConfirmedTables": [],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [
+          "tbl_care_return_to_mo"
+        ],
+        "idxs": [
+          "uq_care_return_to_mo_pending_patient",
+          "idx_care_return_to_mo_patient"
+        ],
+        "cons": [
+          "ck_care_plan_precautions_duration",
+          "ck_care_plan_precautions_end"
+        ],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "CRITICAL",
+      "recommendation": "DO_NOT_APPLY_DDL__HISTORY_ONLY_IF_COMPLETE",
+      "wouldFailIfAppliedOnKnownRender": false
+    },
+    {
+      "file": "038_dynamic_page_rbac.sql",
+      "creates": [],
+      "riskyCreate": [],
+      "columnsAdded": [],
+      "enums": [],
+      "indexes": [],
+      "constraints": [],
+      "functions": [],
+      "triggers": [],
+      "bootstrapContainsTables": [],
+      "renderUserConfirmedTables": [],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "LOW",
+      "recommendation": "DATA_OR_RBAC_ONLY__SAFE_IF_IDEMPOTENT",
+      "wouldFailIfAppliedOnKnownRender": false
+    },
+    {
+      "file": "039_diagnostic_navigator_workflow.sql",
+      "creates": [
+        "tbl_diagnostic_advice",
+        "tbl_diagnostic_advice_followups"
+      ],
+      "riskyCreate": [],
+      "columnsAdded": [
+        "workflow_status",
+        "assigned_health_worker_id",
+        "requested_date",
+        "collection_scan_date",
+        "collection_centre",
+        "collection_notes",
+        "returned_reason",
+        "forwarded_to_hs_by",
+        "forwarded_to_hs_at",
+        "routed_to_specialist_by",
+        "routed_to_specialist_at",
+        "advice_forwarded_to_hw_by",
+        "advice_forwarded_to_hw_at",
+        "scan_date",
+        "diagnostic_centre"
+      ],
+      "enums": [],
+      "indexes": [
+        "idx_diagnostic_orders_workflow",
+        "idx_diagnostic_orders_assigned_hw",
+        "idx_diagnostic_advice_patient",
+        "idx_diagnostic_advice_followups_order"
+      ],
+      "constraints": [
+        "ck_diagnostic_order_workflow_status",
+        "tbl_diagnostic_order_reports_review_status_check"
+      ],
+      "functions": [],
+      "triggers": [],
+      "bootstrapContainsTables": [
+        "tbl_diagnostic_advice",
+        "tbl_diagnostic_advice_followups"
+      ],
+      "renderUserConfirmedTables": [],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [
+          "tbl_diagnostic_advice",
+          "tbl_diagnostic_advice_followups"
+        ],
+        "idxs": [
+          "idx_diagnostic_orders_workflow",
+          "idx_diagnostic_orders_assigned_hw",
+          "idx_diagnostic_advice_patient",
+          "idx_diagnostic_advice_followups_order"
+        ],
+        "cons": [
+          "ck_diagnostic_order_workflow_status",
+          "tbl_diagnostic_order_reports_review_status_check"
+        ],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "CRITICAL",
+      "recommendation": "DO_NOT_APPLY_DDL__HISTORY_ONLY_IF_COMPLETE",
+      "wouldFailIfAppliedOnKnownRender": false
+    },
+    {
+      "file": "040_system_admin_role_manage.sql",
+      "creates": [],
+      "riskyCreate": [],
+      "columnsAdded": [],
+      "enums": [],
+      "indexes": [],
+      "constraints": [],
+      "functions": [],
+      "triggers": [],
+      "bootstrapContainsTables": [],
+      "renderUserConfirmedTables": [],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "LOW",
+      "recommendation": "DATA_OR_RBAC_ONLY__SAFE_IF_IDEMPOTENT",
+      "wouldFailIfAppliedOnKnownRender": false
+    },
+    {
+      "file": "041_district_custom_accounts_page.sql",
+      "creates": [],
+      "riskyCreate": [],
+      "columnsAdded": [],
+      "enums": [],
+      "indexes": [],
+      "constraints": [],
+      "functions": [],
+      "triggers": [],
+      "bootstrapContainsTables": [],
+      "renderUserConfirmedTables": [],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "LOW",
+      "recommendation": "DATA_OR_RBAC_ONLY__SAFE_IF_IDEMPOTENT",
+      "wouldFailIfAppliedOnKnownRender": false
+    },
+    {
+      "file": "042_diagnostic_followup_reassessment_cycle.sql",
+      "creates": [],
+      "riskyCreate": [],
+      "columnsAdded": [
+        "followup_forwarded_to_specialist_by",
+        "followup_forwarded_to_specialist_at",
+        "case_closed_by",
+        "case_closed_at",
+        "case_closure_reason",
+        "version_no",
+        "supersedes_advice_id",
+        "is_current",
+        "follow_up_required",
+        "follow_up_due_date",
+        "reassessment_instructions",
+        "closure_reason",
+        "created_by",
+        "contacted_at",
+        "patient_contacted",
+        "symptoms_status",
+        "improvement_status",
+        "advice_followed",
+        "medicine_adherence",
+        "new_problems",
+        "specialist_review_needed",
+        "followup_notes",
+        "status",
+        "cycle_no",
+        "idempotency_key",
+        "submitted_at",
+        "returned_by",
+        "returned_at",
+        "return_reason",
+        "forwarded_to_specialist_by",
+        "forwarded_to_specialist_at",
+        "verified_by",
+        "verified_at",
+        "updated_at"
+      ],
+      "enums": [],
+      "indexes": [
+        "uq_diagnostic_advice_current_per_order",
+        "idx_diagnostic_advice_follow_up_due",
+        "uq_diagnostic_followup_idempotency",
+        "uq_diagnostic_followup_open_draft",
+        "idx_diagnostic_followups_status"
+      ],
+      "constraints": [
+        "ck_diagnostic_order_workflow_status",
+        "uq_diagnostic_advice_order_version",
+        "ck_diagnostic_advice_followup_status",
+        "ck_diagnostic_advice_followup_improvement"
+      ],
+      "functions": [],
+      "triggers": [],
+      "bootstrapContainsTables": [],
+      "renderUserConfirmedTables": [],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [],
+        "idxs": [
+          "uq_diagnostic_advice_current_per_order",
+          "idx_diagnostic_advice_follow_up_due",
+          "uq_diagnostic_followup_idempotency",
+          "uq_diagnostic_followup_open_draft",
+          "idx_diagnostic_followups_status"
+        ],
+        "cons": [
+          "ck_diagnostic_order_workflow_status",
+          "uq_diagnostic_advice_order_version",
+          "ck_diagnostic_advice_followup_status",
+          "ck_diagnostic_advice_followup_improvement"
+        ],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "MEDIUM",
+      "recommendation": "VERIFY_RENDER_CATALOG_BEFORE_APPLY",
+      "wouldFailIfAppliedOnKnownRender": false
+    },
+    {
+      "file": "043_diagnostic_followup_security_timeline.sql",
+      "creates": [],
+      "riskyCreate": [],
+      "columnsAdded": [
+        "reassessment_source_order_id",
+        "video_decision_id"
+      ],
+      "enums": [],
+      "indexes": [
+        "uq_diagnostic_followup_one_submitted",
+        "uq_diagnostic_followup_forwarded_cycle",
+        "idx_diagnostic_orders_reassessment_source"
+      ],
+      "constraints": [],
+      "functions": [],
+      "triggers": [],
+      "bootstrapContainsTables": [],
+      "renderUserConfirmedTables": [],
+      "localComplete": true,
+      "existingLocal": {
+        "tables": [],
+        "idxs": [
+          "uq_diagnostic_followup_one_submitted",
+          "uq_diagnostic_followup_forwarded_cycle",
+          "idx_diagnostic_orders_reassessment_source"
+        ],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "missingLocal": {
+        "tables": [],
+        "idxs": [],
+        "cons": [],
+        "fns": [],
+        "trgs": [],
+        "enums": []
+      },
+      "risk": "LOW",
+      "recommendation": "VERIFY_THEN_BASELINE_OR_APPLY",
+      "wouldFailIfAppliedOnKnownRender": false
+    }
+  ]
+}

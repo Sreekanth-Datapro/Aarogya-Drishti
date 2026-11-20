@@ -31,6 +31,8 @@ const hospitalStaffRoutes = require("./routes/hospitalStaff");
 const notificationRoutes = require("./routes/notifications");
 const diagnosticRoutes = require("./routes/diagnostics");
 const trackingRoutes = require("./routes/tracking");
+const speechRoutes = require("./routes/speech");
+const assistantRoutes = require("./routes/assistant");
 
 const app = express();
 
@@ -97,6 +99,9 @@ app.use("/api/video-consultations", require("./routes/videoConsultations"));
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/diagnostics", diagnosticRoutes);
 app.use("/api/tracking", trackingRoutes);
+// Sarvam Speech proxy (keys stay on server; HEALTH_WORKER only)
+app.use("/api/speech", speechRoutes);
+app.use("/api/assistant", assistantRoutes);
 
 // Unknown API paths always return JSON — never the React SPA shell
 app.use("/api", (req, res) => {

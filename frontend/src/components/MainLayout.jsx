@@ -4,6 +4,11 @@ import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../i18n/LanguageContext";
 import Sidebar from "./layout/Sidebar";
 import Topbar from "./layout/Topbar";
+import MobileBottomNavigation from "./layout/MobileBottomNavigation";
+import { GlobalVoiceProvider } from "../voice/global/GlobalVoiceContext";
+import GlobalVoiceSession from "../voice/global/GlobalVoiceSession";
+import GlobalVoicePageAssist from "../voice/global/GlobalVoicePageAssist";
+import FloatingAssistant from "../voice/global/FloatingAssistant";
 
 // Title shown in the top bar for each page address
 // (a page also matches when the address starts with the key, e.g. /admin/facilities/12)
@@ -122,33 +127,39 @@ function MainLayout() {
   const title = t(titleKeyFor(location.pathname));
 
   return (
-    <div className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
-      <Sidebar
-        user={user}
-        open={menuOpen}
-        onClose={() => setMenuOpen(false)}
-        onLogout={handleLogout}
-        collapsed={sidebarCollapsed}
-        onToggleCollapse={toggleCollapsed}
-      />
-
-      {menuOpen && (
-        <button
-          type="button"
-          className="sidebar-overlay"
-          aria-label={t("common.closeMenu")}
-          onClick={() => setMenuOpen(false)}
+    <GlobalVoiceProvider>
+      <div className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
+        <Sidebar
+          user={user}
+          open={menuOpen}
+          onClose={() => setMenuOpen(false)}
+          onLogout={handleLogout}
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={toggleCollapsed}
         />
-      )}
 
-      <div className="app-main">
-        <Topbar title={title} user={user} menuOpen={menuOpen} onMenuClick={() => setMenuOpen(true)} />
+        {menuOpen && (
+          <button
+            type="button"
+            className="sidebar-overlay"
+            aria-label={t("common.closeMenu")}
+            onClick={() => setMenuOpen(false)}
+          />
+        )}
 
-        <main className="page" id="main-content">
-          <Outlet />
-        </main>
+        <div className="app-main">
+          <Topbar title={title} user={user} menuOpen={menuOpen} onMenuClick={() => setMenuOpen(true)} />
+          <GlobalVoiceSession />
+          <GlobalVoicePageAssist />
+
+          <main className="page" id="main-content">
+            <Outlet />
+          </main>
+        </div>
+        <MobileBottomNavigation user={user} />
+        <FloatingAssistant />
       </div>
-    </div>
+    </GlobalVoiceProvider>
   );
 }
 

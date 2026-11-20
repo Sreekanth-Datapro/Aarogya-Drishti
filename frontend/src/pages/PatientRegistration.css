@@ -110,8 +110,17 @@
 
 .patient-registration-form {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+@media (min-width: 768px) {
+  .patient-registration-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .patient-registration-actions {
@@ -230,7 +239,9 @@
 }
 
 .patient-workflow-table-wrap {
+  max-width: 100%;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .patient-workflow-table {
@@ -266,7 +277,7 @@
   text-align: center !important;
 }
 
-@media (max-width: 700px) {
+@media (max-width: 767px) {
   .patient-workflow-hero {
     flex-direction: column;
   }
@@ -279,10 +290,6 @@
   .patient-duplicate-panel li {
     align-items: flex-start;
     flex-direction: column;
-  }
-
-  .patient-registration-form {
-    grid-template-columns: 1fr;
   }
 
   .patient-registration-form > div[aria-hidden="true"] {

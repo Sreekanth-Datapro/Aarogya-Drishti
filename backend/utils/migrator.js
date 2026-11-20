@@ -43,6 +43,29 @@ function is003DualApproved(context = {}, env = process.env) {
   return cliApproved && envApproved;
 }
 
+/**
+ * 003-only promote: dual approval plus explicit --only-003-promote-bootstrap.
+ * Never implies that later migrations (004+) should run.
+ */
+function is003OnlyPromoteApproved(context = {}, env = process.env) {
+  return context.only003PromoteBootstrap === true && is003DualApproved(context, env);
+}
+
+function assertExplicitTrustedDatabaseForOnly003(env = process.env) {
+  const configured = String(env.MIGRATION_TRUSTED_DATABASE_NAME || "").trim();
+  if (!configured) {
+    throw new Error(
+      "only-003 promote requires MIGRATION_TRUSTED_DATABASE_NAME to be set explicitly " +
+        "to the target database name (must match current_database())."
+    );
+  }
+  if (configured === TEST_DATABASE) {
+    throw new Error(
+      "MIGRATION_TRUSTED_DATABASE_NAME must not target the test database."
+    );
+  }
+}
+
 function migrationSortKey(file) {
   return String(file);
 }
@@ -682,6 +705,7 @@ async function runMigrations(
     apply = false,
     defer003 = false,
     approve003PromoteBootstrap = false,
+    only003PromoteBootstrap = false,
     apply003ForIsolatedTestDatabase = false,
     context = {},
     log = console.log,
@@ -711,15 +735,79 @@ async function runMigrations(
       (m) => m.file === BOOTSTRAP_PROMOTION_MIGRATION
     );
     const env = context.env || process.env;
-    const dualApproved = is003DualApproved(
-      { ...context, approve003PromoteBootstrap },
-      env
-    );
+    const mergedContext = {
+      ...context,
+      approve003PromoteBootstrap,
+      only003PromoteBootstrap:
+        only003PromoteBootstrap === true || context.only003PromoteBootstrap === true,
+    };
+    const dualApproved = is003DualApproved(mergedContext, env);
+    const only003Approved = is003OnlyPromoteApproved(mergedContext, env);
+    const only003Requested = mergedContext.only003PromoteBootstrap === true;
 
     let pending = allPending;
     const isolatedTest003 = apply003ForIsolatedTestDatabase === true;
 
-    if (pending003 && apply) {
+    if (apply && only003Requested) {
+      if (defer003) {
+        throw new Error(
+          "Use either --defer-003 or --only-003-promote-bootstrap, not both."
+        );
+      }
+      if (isolatedTest003) {
+        throw new Error(
+          "Isolated-test 003 harness cannot be combined with --only-003-promote-bootstrap."
+        );
+      }
+      if (!dualApproved) {
+        throw new Error(
+          "only-003 promote requires --only-003-promote-bootstrap, " +
+            "--approve-003-promote-bootstrap, and MIGRATE_APPROVE_003=PROMOTE_BOOTSTRAP."
+        );
+      }
+
+      assertExplicitTrustedDatabaseForOnly003(env);
+      // Trusted identity check before any promotion work (also re-checked inside 003).
+      await assertTrustedDatabaseFor003(client, { ...mergedContext, env });
+
+      const pendingBefore003 = allPending.filter((m) =>
+        isBeforeBootstrapPromotion(m.file)
+      );
+      if (pendingBefore003.length > 0) {
+      throw new Error(
+          "only-003 promote requires migrations before 003 to be applied first: " +
+            pendingBefore003.map((m) => m.file).join(", ")
+        );
+      }
+
+      if (!pending003) {
+        log(
+          "  skipped   003_promote_bootstrap_admin.js (already applied; only-003 mode makes no changes)"
+        );
+        const alreadyResults = [
+          {
+            file: BOOTSTRAP_PROMOTION_MIGRATION,
+            action: "already-applied",
+          },
+        ];
+        for (const migration of allPending) {
+          if (isAfterBootstrapPromotion(migration.file)) {
+            alreadyResults.push({
+              file: migration.file,
+              action: "held-back-only-003",
+            });
+          }
+        }
+        return alreadyResults;
+      }
+
+      pending = [pending003];
+      log(
+        "  approval  003_promote_bootstrap_admin.js only-003 dual approval accepted " +
+          "(CLI --only-003-promote-bootstrap + --approve-003-promote-bootstrap + MIGRATE_APPROVE_003); " +
+          "004+ will not run"
+      );
+    } else if (pending003 && apply) {
       if (isolatedTest003 && (dualApproved || defer003)) {
         throw new Error(
           "Isolated-test 003 harness cannot be combined with dual approval or --defer-003."
@@ -744,8 +832,9 @@ async function runMigrations(
       } else {
         throw new Error(
           "003_promote_bootstrap_admin.js is not recorded as applied; later migrations will not run. " +
-            "Use --defer-003 to apply/baseline only 001–002, or dual approval " +
-            "(--approve-003-promote-bootstrap and MIGRATE_APPROVE_003=PROMOTE_BOOTSTRAP) to execute 003 in order."
+            "Use --defer-003 to apply/baseline only 001–002, dual approval " +
+            "(--approve-003-promote-bootstrap and MIGRATE_APPROVE_003=PROMOTE_BOOTSTRAP) to execute 003 then 004+, " +
+            "or --only-003-promote-bootstrap with the same dual approval to execute 003 alone."
         );
       }
     }
@@ -786,11 +875,16 @@ async function runMigrations(
             await executeIsolatedTestBootstrapPromotion(
               client,
               migration,
-              context,
+              mergedContext,
               log
             );
           } else {
-            await executeApprovedBootstrapPromotion(client, migration, context, log);
+            await executeApprovedBootstrapPromotion(
+              client,
+              migration,
+              mergedContext,
+              log
+            );
           }
         } else if (migration.file.endsWith(".sql")) {
           const sql = stripTransactionControl(fs.readFileSync(fullPath, "utf8"));
@@ -811,7 +905,7 @@ async function runMigrations(
       }
 
       if (migration.file !== BOOTSTRAP_PROMOTION_MIGRATION) {
-        log(`  applied   ${migration.file} (${Date.now() - started} ms)`);
+      log(`  applied   ${migration.file} (${Date.now() - started} ms)`);
       }
       results.push({
         file: migration.file,
@@ -834,6 +928,15 @@ async function runMigrations(
       }
     }
 
+    // only-003: explicitly record that later pending files were not executed.
+    if (apply && only003Approved) {
+      for (const migration of allPending) {
+        if (isAfterBootstrapPromotion(migration.file)) {
+          results.push({ file: migration.file, action: "held-back-only-003" });
+        }
+      }
+    }
+
     return results;
   } finally {
     await client.query("SELECT pg_advisory_unlock($1)", [ADVISORY_LOCK_KEY]);
@@ -846,6 +949,7 @@ module.exports = {
   listMigrationFiles,
   resolveTrustedProductionDatabaseName,
   is003DualApproved,
+  is003OnlyPromoteApproved,
   summarizeMigrationStatusForBootstrap,
   resolveKnownBootstrapPromotionChecksum,
   BASELINE_CHECKS,
@@ -854,6 +958,7 @@ module.exports = {
   isBeforeBootstrapPromotion,
   isAfterBootstrapPromotion,
   assertIsolatedTestDatabaseFor003,
+  assertExplicitTrustedDatabaseForOnly003,
   DEFAULT_PRODUCTION_DATABASE,
   BOOTSTRAP_PROMOTION_MIGRATION,
   ORIGINAL_BOOTSTRAP_PROMOTION_CHECKSUM,

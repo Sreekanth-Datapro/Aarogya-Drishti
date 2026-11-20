@@ -134,8 +134,14 @@
   }
 }
 
-/* Mobile: 1 column */
+/* Mobile: compact two-column Android-style statistic cards */
 @media (max-width: 540px) {
+  .dashboard-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 359px) {
   .dashboard-kpi-grid {
     grid-template-columns: 1fr;
   }

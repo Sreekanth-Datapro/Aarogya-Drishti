@@ -204,7 +204,7 @@ export default function HwDashboard() {
       {!mandals.length && !error && <Alert type="warning">{t("hwDashboard.noLocations")}</Alert>}
 
       <section className="hw-analytics-band" aria-label={t("hwDashboard.analyticsTitle")}>
-        <div className="district-stat-grid hw-stat-grid-animated">
+        <div className="district-stat-grid resp-stat-grid hw-stat-grid-animated">
           <StatCard icon={Users} label={t("hwDashboard.totalPatients")} value={number(summary.total)} />
           <StatCard icon={UserPlus} tone="blue" label={t("hwDashboard.thisMonth")} value={number(summary.this_month)} />
           <StatCard icon={ShieldCheck} tone="violet" label={t("hwDashboard.screeningConsent")} value={number(summary.screening_consented)}

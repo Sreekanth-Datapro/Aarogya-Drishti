@@ -250,8 +250,8 @@ export default function StaffManagement({ customOnly = false }) {
     .filter((facility) => !["SPECIALIST", "HOSPITAL_STAFF"].includes(roleCode)
       || String(facility.facility_type) === "HOSPITAL")
     .map((facility) => (
-      <option key={facility.id} value={facility.id}>{getLocalizedMasterName(facility, language)}</option>
-    ));
+    <option key={facility.id} value={facility.id}>{getLocalizedMasterName(facility, language)}</option>
+  ));
   const customRoles = options.custom_roles || [];
   const selectedCustomRole = customRoles.find((role) => role.code === form.role_code) || null;
   const isCustomRoleSelected = Boolean(selectedCustomRole);
@@ -342,9 +342,9 @@ export default function StaffManagement({ customOnly = false }) {
         <div className="staff-search-grid">
           <TextField id="staff-search" icon={Search} label={t("staff.search")} value={filters.search} onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))} />
           {!pageRole && (
-            <SelectField id="staff-role-filter" label={t("staff.role")} value={filters.role_code} onChange={(event) => setFilters((current) => ({ ...current, role_code: event.target.value }))}>
+          <SelectField id="staff-role-filter" label={t("staff.role")} value={filters.role_code} onChange={(event) => setFilters((current) => ({ ...current, role_code: event.target.value }))}>
               <option value="">{t("staff.allRoles")}</option>{filterRoleOptions}
-            </SelectField>
+          </SelectField>
           )}
           {canChooseDistrict && (
             <SelectField id="staff-district-filter" label={t("staff.district")} value={filters.district_id} onChange={(event) => setFilters((current) => ({ ...current, district_id: event.target.value }))}>
@@ -354,7 +354,7 @@ export default function StaffManagement({ customOnly = false }) {
         </div>
       </Card>
 
-      <Card>
+        <Card>
         <div className="staff-list-heading">
           <h2>{t("staff.staffList")}</h2>
           <p>{pageRole ? getRoleLabel(pageRole, language) : t("staff.subtitle")}</p>
@@ -444,7 +444,7 @@ export default function StaffManagement({ customOnly = false }) {
               }} required>
                 <option value="">{t("staff.selectRole")}</option>
                 {createRoleOptions}
-              </SelectField>
+            </SelectField>
             )}
             {!pageRole && customOnly && customRoles.length === 0 && (
               <p className="staff-hint">{t("staff.noCustomRoles")}</p>
@@ -558,7 +558,7 @@ export default function StaffManagement({ customOnly = false }) {
           <Button type="button" onClick={saveStaff} loading={saving}>{t("staff.save")}</Button>
         </>}
       >
-        {selected && (
+      {selected && (
           <div className="staff-create-grid">
             <TextField id="edit-staff-name" label={t("staff.fullName")} value={selected.full_name || ""} onChange={(event) => setSelected((current) => ({ ...current, full_name: event.target.value }))} />
             <TextField id="edit-staff-email" label={t("staff.email")} type="email" value={selected.email || ""} onChange={(event) => setSelected((current) => ({ ...current, email: event.target.value }))} />
@@ -593,7 +593,7 @@ export default function StaffManagement({ customOnly = false }) {
               </div>
             )}
           </div>
-        )}
+      )}
       </Modal>
     </div>
   );

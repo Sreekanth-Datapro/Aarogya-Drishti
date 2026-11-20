@@ -1,0 +1,35 @@
+﻿Creating an optimized production build...
+Compiled with warnings.
+
+[eslint] 
+src\i18n\translations.js
+  Line 293:7:   Duplicate key 'clinicalReason'  no-dupe-keys
+  Line 4274:7:  Duplicate key 'clinicalReason'  no-dupe-keys
+
+src\pages\diagnostics\DiagnosticOrderDetails.jsx
+  Line 193:6:  React Hook useEffect has a missing dependency: 'loadEligibleHealthWorkers'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src\pages\healthWorker\screening\PhotoStep.jsx
+  Line 130:6:  React Hook useEffect has a missing dependency: 'screening.photos'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+Search for the keywords to learn more about each warning.
+To ignore, add // eslint-disable-next-line to the line before.
+
+File sizes after gzip:
+
+  477.09 kB  build\static\js\main.8ddb919a.js
+  35.49 kB   build\static\css\main.fd81136f.css
+
+The project was built assuming it is hosted at /.
+You can control this with the homepage field in your package.json.
+
+The build folder is ready to be deployed.
+You may serve it with a static server:
+
+  npm install -g serve
+  serve -s build
+
+Find out more about deployment here:
+
+  https://cra.link/deployment
+

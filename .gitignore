@@ -91,6 +91,9 @@ Desktop.ini
 **/*_test_out.txt
 # Local database schema and seed artifact
 /backend/ALL_IN_ONE (1).sql
+/backend/schema/_schema_only.sql
+/backend/schema/_mst_data.sql
+# Keep AAROGYA_INITIAL_SEED.sql + export JSON in repo; no secrets there
 
 # Local translation review extracts
 /backend/i18n-review/

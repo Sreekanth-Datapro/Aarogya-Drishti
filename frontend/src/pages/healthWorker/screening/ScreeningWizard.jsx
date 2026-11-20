@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ClipboardList, HeartPulse, ShieldAlert } from "lucide-react";
 import api from "../../../services/api";
@@ -36,6 +36,13 @@ export default function ScreeningWizard() {
   const [screening, setScreening] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const selectionRequestId = useRef(0);
+  const selectedPatientId = useRef(null);
+  const patientsRef = useRef(patients);
+
+  useEffect(() => {
+    patientsRef.current = patients;
+  }, [patients]);
 
   const loadPatients = useCallback(async () => {
     const response = await api.get("/screenings/patients");
@@ -56,14 +63,22 @@ export default function ScreeningWizard() {
     })();
   }, [loadPatients]);
 
-  const loadConsents = async (patientId) => {
+  const loadConsents = useCallback(async (patientId, requestId = selectionRequestId.current) => {
     const response = await api.get(`/screenings/patients/${patientId}/consents`);
+    if (requestId !== selectionRequestId.current || selectedPatientId.current !== patientId) return null;
     setConsents(response.data.consents);
-  };
+    return response.data.consents;
+  }, []);
 
-  const loadScreening = async (screeningId) => {
+  const loadScreening = useCallback(async (screeningId, patientId, requestId = selectionRequestId.current) => {
     const response = await api.get(`/screenings/${screeningId}`);
     const current = response.data.screening;
+    if (requestId !== selectionRequestId.current || selectedPatientId.current !== patientId) return null;
+    if (!current || current.patient_id !== patientId || current.id !== screeningId) {
+      setScreening(null);
+      setError("screening.loadFailed");
+      return null;
+    }
     setScreening(current);
     setConsents(current.consents);
     setPatients((items) => items.map((item) => item.id === current.patient_id
@@ -73,75 +88,92 @@ export default function ScreeningWizard() {
       ? { ...item, screening_id: current.id, case_state: current.case_state, screening_date: current.screening_date }
       : item);
     return current;
-  };
+  }, []);
 
   const requestedPatientId = searchParams.get("patientId");
 
   // Choosing a patient: continue an unfinished screening, otherwise start with consent
   const choosePatient = async (item) => {
+    const requestId = selectionRequestId.current + 1;
+    selectionRequestId.current = requestId;
+    selectedPatientId.current = item.id;
     setError("");
+    setStep(0);
+    setConsents({ SCREENING: null, IMAGE_CAPTURE: null, TELECONSULT: null });
+    setPatient(item);
+    setScreening(null);
     try {
-      setPatient(item);
-      setScreening(null);
       if (item.screening_id && OPEN_STATES.includes(item.case_state)) {
-        const current = await loadScreening(item.screening_id);
+        const current = await loadScreening(item.screening_id, item.id, requestId);
+        if (!current) return;
         setStep(current.case_state === "SCREENED" && current.medical_officer_decision === "REQUEST_MORE_INFO"
           ? 2
           : OPEN_STATES.includes(current.case_state) ? 3 : 0);
       } else if (ACTIVE_SCREENING_STATES.includes(item.case_state)) {
         setStep(0);
       } else {
-        await loadConsents(item.id);
+        const currentConsents = await loadConsents(item.id, requestId);
+        if (!currentConsents) return;
         setStep(1);
       }
     } catch (requestError) {
-      setError(apiMessage(requestError, "screening.loadFailed"));
+      if (requestId === selectionRequestId.current) {
+        setError(apiMessage(requestError, "screening.loadFailed"));
+      }
     }
   };
 
   useEffect(() => {
     if (loading || !requestedPatientId) return;
+    const requestId = selectionRequestId.current + 1;
+    selectionRequestId.current = requestId;
+    selectedPatientId.current = requestedPatientId;
     let active = true;
     (async () => {
       try {
-        const registeredPatient = patients.find((item) => item.id === requestedPatientId);
-        const patient = registeredPatient || (await api.get(`/patients/${encodeURIComponent(requestedPatientId)}`)).data.patient;
-        if (!active) return;
-        setPatient(patient);
+        const registeredPatient = patientsRef.current.find((item) => item.id === requestedPatientId);
+        const selected = registeredPatient || (await api.get(`/patients/${encodeURIComponent(requestedPatientId)}`)).data.patient;
+        if (!active || requestId !== selectionRequestId.current) return;
+        if (!selected || selected.id !== requestedPatientId) {
+          setError("screening.loadFailed");
+          return;
+        }
+        setPatient(selected);
+        setScreening(null);
         if (registeredPatient?.screening_id
             && registeredPatient.case_state === "SCREENED"
             && registeredPatient.medical_officer_decision === "REQUEST_MORE_INFO") {
-          const current = await api.get(`/screenings/${registeredPatient.screening_id}`);
-          if (!active) return;
-          setScreening(current.data.screening);
-          setConsents(current.data.screening.consents);
+          const current = await loadScreening(registeredPatient.screening_id, requestedPatientId, requestId);
+          if (!active || !current) return;
           setStep(2);
         } else if (registeredPatient?.screening_id && OPEN_STATES.includes(registeredPatient.case_state)) {
-          const current = await api.get(`/screenings/${registeredPatient.screening_id}`);
-          if (!active) return;
-          setScreening(current.data.screening);
-          setConsents(current.data.screening.consents);
-          setStep(OPEN_STATES.includes(current.data.screening.case_state) ? 3 : 0);
+          const current = await loadScreening(registeredPatient.screening_id, requestedPatientId, requestId);
+          if (!active || !current) return;
+          setStep(OPEN_STATES.includes(current.case_state) ? 3 : 0);
         } else if (registeredPatient && ACTIVE_SCREENING_STATES.includes(registeredPatient.case_state)) {
-          setScreening(null);
           setStep(0);
         } else {
-          setScreening(null);
-          const response = await api.get(`/screenings/patients/${requestedPatientId}/consents`);
-          if (!active) return;
-          setConsents(response.data.consents);
+          const currentConsents = await loadConsents(requestedPatientId, requestId);
+          if (!active || !currentConsents) return;
           setStep(1);
         }
       } catch (requestError) {
-        if (active) setError(apiMessage(requestError, "screening.loadFailed"));
+        if (active && requestId === selectionRequestId.current) {
+          setError(apiMessage(requestError, "screening.loadFailed"));
+        }
       } finally {
-        if (active) setSearchParams({}, { replace: true });
+        if (active && requestId === selectionRequestId.current) setSearchParams({}, { replace: true });
       }
     })();
-    return () => { active = false; };
-  }, [loading, patients, requestedPatientId, setSearchParams]);
+    return () => {
+      active = false;
+      if (selectionRequestId.current === requestId) selectionRequestId.current += 1;
+    };
+  }, [loadConsents, loadScreening, loading, requestedPatientId, setSearchParams]);
 
   const startOver = async () => {
+    selectionRequestId.current += 1;
+    selectedPatientId.current = null;
     setPatient(null);
     setScreening(null);
     setStep(0);
@@ -153,6 +185,8 @@ export default function ScreeningWizard() {
   };
 
   if (loading) return <PageLoader label={t("common.loading")} />;
+  const selectedScreening = screening?.patient_id === patient?.id ? screening : null;
+  const activeSelectionRequestId = selectionRequestId.current;
 
   return (
     <div className="scr-page">
@@ -193,7 +227,7 @@ export default function ScreeningWizard() {
             consents={consents}
             purposes={options?.consent_purposes || []}
             languages={options?.languages || []}
-            onSaved={() => loadConsents(patient.id)}
+            onSaved={() => loadConsents(patient.id, selectionRequestId.current)}
             onBack={startOver}
             onNext={() => setStep(2)}
           />
@@ -205,10 +239,13 @@ export default function ScreeningWizard() {
             screening={screening}
             onBack={() => setStep(1)}
             onCreated={async (created) => {
-              await loadScreening(created.id);
+              const current = await loadScreening(created.id, patient.id, activeSelectionRequestId);
+              if (!current) return;
               setStep(3);
             }}
             onUpdated={async (updated) => {
+              if (selectionRequestId.current !== activeSelectionRequestId
+                  || selectedPatientId.current !== patient.id) return;
               setScreening((current) => ({ ...current, ...updated }));
               setPatient((current) => ({
                 ...current,
@@ -221,18 +258,19 @@ export default function ScreeningWizard() {
             }}
           />
         )}
-        {step === 3 && screening && (
+        {step === 3 && selectedScreening && (
           <PhotoStep
-            screening={screening}
+            key={selectedScreening.id}
+            screening={selectedScreening}
             maxBytes={options?.max_photo_bytes}
             photoConsent={consents.IMAGE_CAPTURE?.granted === true}
-            onChanged={() => loadScreening(screening.id)}
+            onChanged={() => loadScreening(selectedScreening.id, patient.id, activeSelectionRequestId)}
             onNext={() => setStep(4)}
           />
         )}
-        {step === 4 && screening && (
+        {step === 4 && selectedScreening && (
           <ReviewStep
-            screening={screening}
+            screening={selectedScreening}
             options={options}
             photoConsent={consents.IMAGE_CAPTURE?.granted === true}
             onBack={() => setStep(3)}

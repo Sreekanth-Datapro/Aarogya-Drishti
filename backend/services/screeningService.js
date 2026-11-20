@@ -569,17 +569,6 @@ async function updateRequestedInformation(userId, req, screeningId, input = {}) 
       throw new HttpError(409, "The pain symptom is not configured. Contact the administrator.", "SYMPTOM_NOT_CONFIGURED");
     }
 
-    if (consents.IMAGE_CAPTURE?.granted === true) {
-      const views = await client.query(
-        `SELECT DISTINCT annotation_site FROM tbl_screening_photos
-          WHERE screening_id = $1 AND status <> 'SUPERSEDED' AND annotation_site = ANY($2::text[])`,
-        [screeningId, PHOTO_VIEWS]
-      );
-      if (views.rows.length < PHOTO_VIEWS.length) {
-        throw new HttpError(400, "Upload the front, left and right photos before submitting", "PHOTOS_REQUIRED");
-      }
-    }
-
     const updated = await client.query(
       `UPDATE tbl_screenings
           SET chief_complaint=$1,tobacco_current=$2,clinical_exam_done=$3,notes=$4,version=version+1
@@ -959,18 +948,6 @@ async function submitScreening(userId, req, screeningId) {
     if (consents.SCREENING?.granted !== true) {
       throw new HttpError(403, "The patient's screening consent is no longer active", "CONSENT_REQUIRED");
     }
-    // With photograph consent, all three views are needed for the Medical Officer
-    if (consents.IMAGE_CAPTURE?.granted === true) {
-      const views = await client.query(
-        `SELECT DISTINCT annotation_site FROM tbl_screening_photos
-          WHERE screening_id = $1 AND status <> 'SUPERSEDED' AND annotation_site = ANY($2::text[])`,
-        [screening.id, PHOTO_VIEWS]
-      );
-      if (views.rows.length < PHOTO_VIEWS.length) {
-        throw new HttpError(400, "Upload the front, left and right photos before submitting", "PHOTOS_REQUIRED");
-      }
-    }
-
     if (screening.case_state === "CONSENTED") {
       await client.query("UPDATE tbl_screenings SET case_state = 'SCREENED' WHERE id = $1", [screening.id]);
     }

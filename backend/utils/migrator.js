@@ -1,15 +1,13 @@
 const fs = require("fs");
 const path = require("path");
-const crypto = require("crypto");
+const { migrationFileChecksum } = require("./migrationChecksum");
 
 const MIGRATIONS_DIR = path.join(__dirname, "..", "migrations");
 const MIGRATION_FILE = /^\d{3}_[a-z0-9_]+\.(sql|js)$/;
 const ADVISORY_LOCK_KEY = 4821517;
 const BOOTSTRAP_PROMOTION_MIGRATION = "003_promote_bootstrap_admin.js";
-const ORIGINAL_BOOTSTRAP_PROMOTION_CHECKSUM =
-  "22f31672205eed842abe7ecefb0ba4b0fc442c2fa403b8a27304874046cc1258";
 const CURRENT_BOOTSTRAP_PROMOTION_CHECKSUM =
-  "188deb30eb45efa53f679932d74c7f9af8466cdfc4c9e504bbecb0d9574bf389";
+  "d85b086f55dec48d17d08c15cf9b2a1c918c75040e43e90ab4dd2b519bca1b36";
 const APPROVE_003_ENV_VALUE = "PROMOTE_BOOTSTRAP";
 // Legacy local/production database name. Render Postgres uses a different
 // generated name; set MIGRATION_TRUSTED_DATABASE_NAME to that exact name.
@@ -342,10 +340,6 @@ async function assertSafeToApplyMigration(client, file) {
   }
 }
 
-function sha256(buffer) {
-  return crypto.createHash("sha256").update(buffer).digest("hex");
-}
-
 function listMigrationFiles() {
   return fs
     .readdirSync(MIGRATIONS_DIR)
@@ -374,7 +368,7 @@ async function getStatus(client) {
   const applied = new Map(appliedRows.rows.map((row) => [row.filename, row]));
 
   return listMigrationFiles().map((file) => {
-    const checksum = sha256(fs.readFileSync(path.join(MIGRATIONS_DIR, file)));
+    const checksum = migrationFileChecksum(path.join(MIGRATIONS_DIR, file));
     const row = applied.get(file);
 
     if (!row) return { file, checksum, state: "pending" };
@@ -438,129 +432,6 @@ async function verifyBootstrapPromotionOutcome(client, bootstrapUsername) {
       "003 post-condition failed: the configured SUPER_ADMIN and matching ROLE_CHANGED audit record were not both confirmed; not marking applied."
     );
   }
-}
-
-async function rewriteKnownBootstrapPromotionChecksum(client) {
-  const updated = await client.query(
-    `UPDATE schema_migrations
-        SET checksum = $1
-      WHERE filename = $2
-        AND checksum = $3`,
-    [
-      CURRENT_BOOTSTRAP_PROMOTION_CHECKSUM,
-      BOOTSTRAP_PROMOTION_MIGRATION,
-      ORIGINAL_BOOTSTRAP_PROMOTION_CHECKSUM,
-    ]
-  );
-
-  if (updated.rowCount !== 1) {
-    throw new Error(
-      "003 known checksum rewrite failed; refusing to continue."
-    );
-  }
-}
-
-async function skipKnownBootstrapPromotion(client, migration, context, log) {
-  if (migration.checksum !== CURRENT_BOOTSTRAP_PROMOTION_CHECKSUM) {
-    throw new Error(
-      "003 checksum mismatch is not the reviewed local source; refusing to continue."
-    );
-  }
-
-  const databaseResult = await client.query("SELECT current_database() AS name");
-  const databaseName = databaseResult.rows[0]?.name;
-  const recordedResult = await client.query(
-    "SELECT checksum FROM schema_migrations WHERE filename = $1",
-    [BOOTSTRAP_PROMOTION_MIGRATION]
-  );
-  const recordedChecksum = recordedResult.rows[0]?.checksum?.trim();
-
-  if (recordedChecksum !== ORIGINAL_BOOTSTRAP_PROMOTION_CHECKSUM) {
-    throw new Error(
-      "003 recorded checksum does not match the known original; refusing to continue."
-    );
-  }
-
-  if (databaseName === TEST_DATABASE) {
-    const usersResult = await client.query(
-      "SELECT EXISTS (SELECT 1 FROM tbl_users LIMIT 1) AS has_users"
-    );
-    if (usersResult.rows[0]?.has_users !== false) {
-      throw new Error(
-        "003 may be skipped on aarogya_test only when tbl_users is empty; refusing to continue."
-      );
-    }
-
-    await rewriteKnownBootstrapPromotionChecksum(client);
-    log(
-      "  skipped   003_promote_bootstrap_admin.js (aarogya_test is empty and the known original checksum is recorded; migration was not executed; checksum updated to current)"
-    );
-    return;
-  }
-
-  const trustedDatabaseName = resolveTrustedProductionDatabaseName(
-    context.env || process.env
-  );
-  if (databaseName !== trustedDatabaseName) {
-    throw new Error(
-      `003 checksum exception is not allowed for database "${databaseName || "unknown"}".`
-    );
-  }
-
-  const bootstrapUsername = context.bootstrapUsername;
-  if (typeof bootstrapUsername !== "string" || !bootstrapUsername.trim()) {
-    throw new Error(
-      "003 production verification requires the configured bootstrap username."
-    );
-  }
-
-  await verifyBootstrapPromotionOutcome(client, bootstrapUsername);
-  await rewriteKnownBootstrapPromotionChecksum(client);
-
-  log(
-    `  verified  003_promote_bootstrap_admin.js (${trustedDatabaseName} SUPER_ADMIN and matching ROLE_CHANGED audit record confirmed; checksum updated to current; migration was not executed)`
-  );
-}
-
-/**
- * Bootstrap/startup helper: if the only critical checksum mismatch is the known
- * 003 ORIGINAL→CURRENT exception, verify evidence and rewrite the recorded hash.
- * Does not apply pending migrations.
- */
-async function resolveKnownBootstrapPromotionChecksum(
-  client,
-  context = {},
-  log = console.log
-) {
-  const status = await getStatus(client);
-  const criticalModified = status.filter(
-    (migration) =>
-      migration.state === "modified" &&
-      !isAfterBootstrapPromotion(migration.file)
-  );
-
-  if (criticalModified.length === 0) {
-    return { resolved: false };
-  }
-
-  if (
-    criticalModified.length !== 1 ||
-    criticalModified[0].file !== BOOTSTRAP_PROMOTION_MIGRATION
-  ) {
-    throw new Error(
-      `Database has modified migration checksum(s): ` +
-        `${criticalModified.map((migration) => migration.file).join(", ")}. ` +
-        "Resolve checksum issues before bootstrap."
-    );
-  }
-
-  await skipKnownBootstrapPromotion(
-    client,
-    criticalModified[0],
-    context,
-    log
-  );
-  return { resolved: true };
 }
 
 /**
@@ -718,14 +589,10 @@ async function runMigrations(
     const status = await getStatus(client);
 
     const modified = status.filter((m) => m.state === "modified");
-    for (const migration of modified) {
-      if (migration.file !== BOOTSTRAP_PROMOTION_MIGRATION) {
-        throw new Error(
-          `Applied migration file modified: ${migration.file}`
-        );
-      }
-
-      await skipKnownBootstrapPromotion(client, migration, context, log);
+    if (modified.length > 0) {
+      throw new Error(
+        `Applied migration file modified: ${modified.map((migration) => migration.file).join(", ")}`
+      );
     }
 
     const allPending = status
@@ -951,7 +818,6 @@ module.exports = {
   is003DualApproved,
   is003OnlyPromoteApproved,
   summarizeMigrationStatusForBootstrap,
-  resolveKnownBootstrapPromotionChecksum,
   BASELINE_CHECKS,
   hasNewerRegistrationReviewerWorkflow,
   assertSafeToApplyMigration,
@@ -961,7 +827,6 @@ module.exports = {
   assertExplicitTrustedDatabaseForOnly003,
   DEFAULT_PRODUCTION_DATABASE,
   BOOTSTRAP_PROMOTION_MIGRATION,
-  ORIGINAL_BOOTSTRAP_PROMOTION_CHECKSUM,
   CURRENT_BOOTSTRAP_PROMOTION_CHECKSUM,
   APPROVE_003_ENV_VALUE,
   TEST_DATABASE,

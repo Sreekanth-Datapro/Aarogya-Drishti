@@ -12,7 +12,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const crypto = require("crypto");
+const { migrationFileChecksum } = require("../utils/migrationChecksum");
 const { listMigrationFiles } = require("../utils/migrator");
 
 const backendRoot = path.join(__dirname, "..");
@@ -21,10 +21,6 @@ const outFile = path.join(schemaDir, "AAROGYA_BOOTSTRAP_FINAL.sql");
 const schemaOnly = path.join(schemaDir, "_schema_only.sql");
 const mstData = path.join(schemaDir, "_mst_data.sql");
 const migrationsDir = path.join(backendRoot, "migrations");
-
-function sha256File(filePath) {
-  return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
-}
 
 function stripPgDumpNoise(sql) {
   return sql
@@ -56,7 +52,7 @@ function buildMigrationsHistorySql() {
   ];
 
   for (const file of files) {
-    const checksum = sha256File(path.join(migrationsDir, file));
+    const checksum = migrationFileChecksum(path.join(migrationsDir, file));
     const escaped = file.replace(/'/g, "''");
     lines.push(
       `INSERT INTO schema_migrations (filename, checksum, applied_by, execution_ms)`

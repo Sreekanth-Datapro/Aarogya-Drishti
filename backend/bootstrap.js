@@ -6,7 +6,6 @@ const config = require("./config/config");
 const {
   getStatus,
   summarizeMigrationStatusForBootstrap,
-  resolveKnownBootstrapPromotionChecksum,
   BOOTSTRAP_PROMOTION_MIGRATION,
 } = require("./utils/migrator");
 
@@ -14,20 +13,7 @@ async function assertMigrationsReadyForBootstrap() {
   const client = await pool.connect();
 
   try {
-    let summary = summarizeMigrationStatusForBootstrap(await getStatus(client));
-
-    // Known reviewed 003 file revision: verify SUPER_ADMIN + audit, then rewrite
-    // the recorded checksum so startup is not permanently blocked.
-    if (
-      !summary.bootstrapAllowed &&
-      summary.criticalModified.length === 1 &&
-      summary.criticalModified[0].file === BOOTSTRAP_PROMOTION_MIGRATION
-    ) {
-      await resolveKnownBootstrapPromotionChecksum(client, {
-        bootstrapUsername: config.systemAdmin.username,
-      });
-      summary = summarizeMigrationStatusForBootstrap(await getStatus(client));
-    }
+    const summary = summarizeMigrationStatusForBootstrap(await getStatus(client));
 
     if (!summary.bootstrapAllowed) {
       if (summary.criticalModified.length > 0) {

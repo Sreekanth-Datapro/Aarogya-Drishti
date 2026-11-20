@@ -4,9 +4,9 @@ jest.mock("../../utils/permissions", () => ({
 
 const fs = require("fs");
 const path = require("path");
-const crypto = require("crypto");
 const {
   runMigrations,
+  getStatus,
   listMigrationFiles,
   resolveTrustedProductionDatabaseName,
   is003DualApproved,
@@ -14,26 +14,25 @@ const {
   isAfterBootstrapPromotion,
   assertExplicitTrustedDatabaseForOnly003,
   summarizeMigrationStatusForBootstrap,
-  resolveKnownBootstrapPromotionChecksum,
   assertIsolatedTestDatabaseFor003,
   DEFAULT_PRODUCTION_DATABASE,
   BOOTSTRAP_PROMOTION_MIGRATION,
-  ORIGINAL_BOOTSTRAP_PROMOTION_CHECKSUM,
   CURRENT_BOOTSTRAP_PROMOTION_CHECKSUM,
   APPROVE_003_ENV_VALUE,
   INTEGRATION_TEST_BOOTSTRAP_USERNAME,
   TEST_DATABASE,
 } = require("../../utils/migrator");
+const {
+  migrationChecksum,
+  migrationFileChecksum,
+} = require("../../utils/migrationChecksum");
 
 const RENDER_TRUSTED_DATABASE = "sudo_suspend_database_aarogya_db";
 
 const MIGRATIONS_DIR = path.join(__dirname, "..", "..", "migrations");
 
 function sha256File(file) {
-  return crypto
-    .createHash("sha256")
-    .update(fs.readFileSync(path.join(MIGRATIONS_DIR, file)))
-    .digest("hex");
+  return migrationFileChecksum(path.join(MIGRATIONS_DIR, file));
 }
 
 function appliedRows(overrides = {}) {
@@ -209,6 +208,24 @@ describe("resolveTrustedProductionDatabaseName", () => {
         MIGRATION_TRUSTED_DATABASE_NAME: "aarogya_test",
       })
     ).toThrow(/must not target the test database/);
+  });
+});
+
+describe("getStatus migration checksums", () => {
+  test("accepts a Git-style LF checksum for a migration read with Windows line endings", async () => {
+    const file = "001_schema_fixes.sql";
+    const lfContent = fs
+      .readFileSync(path.join(MIGRATIONS_DIR, file), "utf8")
+      .replace(/\r\n?/g, "\n");
+    const client = createMockClient({
+      rowsByFilename: appliedRows({
+        [file]: migrationChecksum(lfContent),
+      }),
+    });
+
+    const status = await getStatus(client);
+
+    expect(status.find((migration) => migration.file === file).state).toBe("applied");
   });
 });
 
@@ -948,108 +965,12 @@ describe("runMigrations safeguards", () => {
     ).toBe(false);
   });
 
-  test("003 modified-checksum verification remains enforced for unknown databases", async () => {
+  test("003 checksum mismatches are reported without rewriting migration history", async () => {
     expect(sha256File(BOOTSTRAP_PROMOTION_MIGRATION)).toBe(
       CURRENT_BOOTSTRAP_PROMOTION_CHECKSUM
     );
 
     const client = createMockClient({
-      databaseName: "some_other_render_db",
-      rowsByFilename: appliedRows({
-        [BOOTSTRAP_PROMOTION_MIGRATION]: ORIGINAL_BOOTSTRAP_PROMOTION_CHECKSUM,
-      }),
-    });
-
-    await expect(
-      runMigrations(client, {
-        apply: true,
-        context: { bootstrapUsername: "bootstrap_admin" },
-        log: () => {},
-      })
-    ).rejects.toThrow(/003 checksum exception is not allowed for database "some_other_render_db"/);
-  });
-
-  test("003 production verification path requires matching SUPER_ADMIN audit evidence", async () => {
-    const client = createMockClient({
-      databaseName: "Aarogya",
-      rowsByFilename: appliedRows({
-        [BOOTSTRAP_PROMOTION_MIGRATION]: ORIGINAL_BOOTSTRAP_PROMOTION_CHECKSUM,
-      }),
-      verificationRows: [],
-    });
-
-    await expect(
-      runMigrations(client, {
-        apply: true,
-        context: { bootstrapUsername: "bootstrap_admin" },
-        log: () => {},
-      })
-    ).rejects.toThrow(/003 post-condition failed|003 production verification failed/);
-  });
-
-  test("003 accepts an explicitly trusted Render database name after verification", async () => {
-    const logs = [];
-    const client = createMockClient({
-      databaseName: "aarogya_drishti_render_db",
-      rowsByFilename: appliedRows({
-        [BOOTSTRAP_PROMOTION_MIGRATION]: ORIGINAL_BOOTSTRAP_PROMOTION_CHECKSUM,
-      }),
-      verificationRows: [{ id: "user-1" }],
-    });
-
-    const results = await runMigrations(client, {
-      apply: true,
-      context: {
-        bootstrapUsername: "bootstrap_admin",
-        env: { MIGRATION_TRUSTED_DATABASE_NAME: "aarogya_drishti_render_db" },
-      },
-      log: (message) => logs.push(message),
-    });
-
-    expect(results).toEqual([]);
-    expect(logs.some((line) => /verified\s+003_promote_bootstrap_admin\.js/.test(line))).toBe(
-      true
-    );
-    expect(
-      client.queries.some(
-        (q) =>
-          /UPDATE schema_migrations/i.test(q.sql) &&
-          /SET checksum/i.test(q.sql) &&
-          q.params &&
-          q.params[0] === CURRENT_BOOTSTRAP_PROMOTION_CHECKSUM &&
-          q.params[1] === BOOTSTRAP_PROMOTION_MIGRATION &&
-          q.params[2] === ORIGINAL_BOOTSTRAP_PROMOTION_CHECKSUM
-      )
-    ).toBe(true);
-  });
-
-  test("resolveKnownBootstrapPromotionChecksum rewrites Aarogya after verify", async () => {
-    const client = createMockClient({
-      databaseName: "Aarogya",
-      rowsByFilename: appliedRows({
-        [BOOTSTRAP_PROMOTION_MIGRATION]: ORIGINAL_BOOTSTRAP_PROMOTION_CHECKSUM,
-      }),
-      verificationRows: [{ id: "user-1" }],
-    });
-
-    const result = await resolveKnownBootstrapPromotionChecksum(client, {
-      bootstrapUsername: "bootstrap_admin",
-    });
-
-    expect(result).toEqual({ resolved: true });
-    expect(
-      client.queries.some(
-        (q) =>
-          /UPDATE schema_migrations/i.test(q.sql) &&
-          q.params &&
-          q.params[0] === CURRENT_BOOTSTRAP_PROMOTION_CHECKSUM
-      )
-    ).toBe(true);
-  });
-
-  test("003 refuses when recorded checksum is not the known original", async () => {
-    const client = createMockClient({
-      databaseName: "Aarogya",
       rowsByFilename: appliedRows({
         [BOOTSTRAP_PROMOTION_MIGRATION]: "a".repeat(64),
       }),
@@ -1057,11 +978,13 @@ describe("runMigrations safeguards", () => {
 
     await expect(
       runMigrations(client, {
-        apply: true,
-        context: { bootstrapUsername: "bootstrap_admin" },
+        apply: false,
         log: () => {},
       })
-    ).rejects.toThrow(/003 recorded checksum does not match the known original/);
+    ).rejects.toThrow(/Applied migration file modified: 003_promote_bootstrap_admin\.js/);
+    expect(
+      client.queries.some((q) => /UPDATE\s+schema_migrations/i.test(q.sql))
+    ).toBe(false);
   });
 
   describe("isolated-test 003 harness", () => {

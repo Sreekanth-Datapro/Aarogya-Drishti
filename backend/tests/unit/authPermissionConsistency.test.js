@@ -61,7 +61,9 @@ const ROLE_IDS = {
 const ROLE_PERMISSIONS = {
   HEALTH_WORKER: ["patient.register"],
   SYSTEM_ADMIN: ["role.manage", "district_admin.manage", "master.manage"],
-  SUPER_ADMIN: ["master.view", "master.manage", "master.import", "registration.monitor"],
+  // Simulate an incomplete persisted RBAC mapping; SUPER_ADMIN's immutable
+  // platform capability is supplied by the effective-permission policy.
+  SUPER_ADMIN: ["master.view", "master.manage", "registration.monitor"],
   DISTRICT_ADMIN: ["master.view", "registration.monitor", "registration.finalize"],
   MEDICAL_OFFICER: ["registration.monitor", "registration.recommend", "patient.register", "review.sign"],
 };

@@ -22,6 +22,7 @@ function getEffectivePermissions(roleName, permissions) {
   if (roleName === "SUPER_ADMIN") {
     effective.add("role.manage");
     effective.add("district_admin.manage");
+    effective.add("master.import");
   }
   if (roleName === "SYSTEM_ADMIN") {
     // Role/page RBAC management; district-admin lifecycle stays Super-Admin-only.

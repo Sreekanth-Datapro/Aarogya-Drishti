@@ -227,6 +227,41 @@ describe("getStatus migration checksums", () => {
 
     expect(status.find((migration) => migration.file === file).state).toBe("applied");
   });
+
+  test("accepts the existing legacy checksums for migrations 001 through 003", async () => {
+    const legacyChecksums = {
+      "001_schema_fixes.sql":
+        "14c063647e00b4f88bf03fe6b22bc4248eb97c071496964dfcf286e7e6c91b8b",
+      "002_security_core.sql":
+        "5b2e1520fa360de0a61fef72ee7bd9f24857329129c5bd3c5e47d2f26d0501cd",
+      [BOOTSTRAP_PROMOTION_MIGRATION]:
+        "188deb30eb45efa53f679932d74c7f9af8466cdfc4c9e504bbecb0d9574bf389",
+    };
+    const client = createMockClient({ rowsByFilename: appliedRows(legacyChecksums) });
+
+    const status = await getStatus(client);
+
+    for (const file of Object.keys(legacyChecksums)) {
+      expect(status.find((migration) => migration.file === file).state).toBe("applied");
+    }
+  });
+
+  test("reports both stored and expected checksums for real content mismatches", async () => {
+    const file = "001_schema_fixes.sql";
+    const storedChecksum = "0".repeat(64);
+    const client = createMockClient({
+      rowsByFilename: appliedRows({ [file]: storedChecksum }),
+    });
+
+    const status = await getStatus(client);
+    const migration = status.find((item) => item.file === file);
+
+    expect(migration).toMatchObject({
+      state: "modified",
+      storedChecksum,
+      checksum: sha256File(file),
+    });
+  });
 });
 
 describe("is003DualApproved", () => {

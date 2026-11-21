@@ -1,6 +1,9 @@
 const fs = require("fs");
 const path = require("path");
-const { migrationFileChecksum } = require("./migrationChecksum");
+const {
+  migrationFileChecksum,
+  migrationFileChecksumCandidates,
+} = require("./migrationChecksum");
 
 const MIGRATIONS_DIR = path.join(__dirname, "..", "migrations");
 const MIGRATION_FILE = /^\d{3}_[a-z0-9_]+\.(sql|js)$/;
@@ -368,11 +371,22 @@ async function getStatus(client) {
   const applied = new Map(appliedRows.rows.map((row) => [row.filename, row]));
 
   return listMigrationFiles().map((file) => {
-    const checksum = migrationFileChecksum(path.join(MIGRATIONS_DIR, file));
+    const migrationPath = path.join(MIGRATIONS_DIR, file);
+    const checksum = migrationFileChecksum(migrationPath);
+    const checksumCandidates = migrationFileChecksumCandidates(migrationPath);
     const row = applied.get(file);
 
     if (!row) return { file, checksum, state: "pending" };
-    if (row.checksum !== checksum) return { file, checksum, state: "modified", appliedAt: row.applied_at };
+    const storedChecksum = String(row.checksum).trim();
+    if (!checksumCandidates.includes(storedChecksum)) {
+      return {
+        file,
+        checksum,
+        storedChecksum,
+        state: "modified",
+        appliedAt: row.applied_at,
+      };
+    }
     return { file, checksum, state: "applied", appliedBy: row.applied_by, appliedAt: row.applied_at };
   });
 }
@@ -591,7 +605,12 @@ async function runMigrations(
     const modified = status.filter((m) => m.state === "modified");
     if (modified.length > 0) {
       throw new Error(
-        `Applied migration file modified: ${modified.map((migration) => migration.file).join(", ")}`
+        `Applied migration file modified: ${modified
+          .map(
+            (migration) =>
+              `${migration.file} (stored ${migration.storedChecksum}; expected ${migration.checksum})`
+          )
+          .join(", ")}`
       );
     }
 
